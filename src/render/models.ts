@@ -45,9 +45,28 @@ export interface HeroModel {
   meshes: THREE.Mesh[];
 }
 
-export function buildHeroModel(heroId: string, side: Side): HeroModel {
+export type SkinId = 'classic' | 'veteran' | 'legend';
+
+function shade(color: number, f: number): number {
+  const c = new THREE.Color(color);
+  c.multiplyScalar(f);
+  return c.getHex();
+}
+
+function mix(a: number, b: number, t: number): number {
+  return new THREE.Color(a).lerp(new THREE.Color(b), t).getHex();
+}
+
+/** Cosmetic palettes unlocked through mastery. They never change stats. */
+function skinPalette(p: ReturnType<typeof getHero>['palette'], skin: SkinId) {
+  if (skin === 'veteran') return { ...p, primary: shade(p.primary, 0.62), secondary: 0x2a2522, accent: 0xd9a441 };
+  if (skin === 'legend') return { ...p, primary: mix(p.primary, 0xf2e6c8, 0.55), secondary: 0xb88a2e, accent: 0xffd166 };
+  return p;
+}
+
+export function buildHeroModel(heroId: string, side: Side, skin: SkinId = 'classic'): HeroModel {
   const hero = getHero(heroId);
-  const p = hero.palette;
+  const p = skinPalette(hero.palette, skin);
   const team = TEAM_COLOR[side];
   const root = new THREE.Group();
   const body = new THREE.Group();
@@ -144,6 +163,37 @@ export function buildHeroModel(heroId: string, side: Side): HeroModel {
       box(body, 0.16, 0.05, 0.05, 0.3, 0.6, 0.12, p.accent, 0x7fd6a0);
       box(body, 0.05, 0.16, 0.05, 0.3, 0.55, 0.12, p.accent, 0x7fd6a0);
       break;
+    case 'dagna':
+      box(body, 0.32, 0.1, 0.3, 0, 0.72, 0, p.secondary); // circlet helm
+      box(body, 0.12, 0.08, 0.04, 0, 0.74, 0.15, p.accent, 0xb08a20);
+      box(body, 0.3, 0.2, 0.06, 0, 0.44, -0.16, p.hair); // long hair
+      box(body, 0.05, 0.5, 0.05, 0.3, 0.12, 0.12, 0x8a6a2e); // hammer haft
+      box(body, 0.22, 0.14, 0.16, 0.3, 0.58, 0.12, p.primary); // hammer head
+      box(body, 0.08, 0.08, 0.17, 0.3, 0.61, 0.12, p.accent, 0xb08a20);
+      box(body, 0.38, 0.08, 0.26, 0, 0.44, 0, p.primary); // pauldrons
+      break;
+    case 'nyx':
+      box(body, 0.32, 0.2, 0.3, 0, 0.62, -0.02, p.primary); // hood
+      box(body, 0.28, 0.08, 0.04, 0, 0.52, 0.13, p.secondary); // mask
+      box(body, 0.04, 0.2, 0.04, -0.3, 0.22, 0.12, 0xcfd6de); // daggers
+      box(body, 0.04, 0.2, 0.04, 0.3, 0.22, 0.12, 0xcfd6de);
+      box(body, 0.36, 0.05, 0.05, 0, 0.32, 0.13, p.accent, 0x6a3ab0); // dagger belt
+      break;
+    case 'fenna':
+      box(body, 0.34, 0.08, 0.32, 0, 0.72, 0, p.primary); // leaf crown
+      box(body, 0.06, 0.14, 0.06, -0.12, 0.8, 0.06, p.accent, 0x3a7a20);
+      box(body, 0.06, 0.14, 0.06, 0.12, 0.8, 0.06, p.accent, 0x3a7a20);
+      box(body, 0.3, 0.26, 0.08, 0, 0.42, -0.15, p.hair);
+      box(body, 0.06, 0.66, 0.06, -0.3, 0.04, 0.12, p.secondary); // gnarled staff
+      box(body, 0.12, 0.1, 0.12, -0.3, 0.7, 0.12, p.accent, 0x3a7a20);
+      break;
+    case 'maris':
+      box(body, 0.32, 0.12, 0.3, 0, 0.7, -0.01, p.hair);
+      box(body, 0.3, 0.32, 0.06, 0, 0.36, -0.15, p.hair);
+      box(body, 0.18, 0.06, 0.04, 0, 0.72, 0.15, p.accent, 0x2f8f9d); // shell tiara
+      box(body, 0.14, 0.18, 0.14, 0.3, 0.24, 0.14, p.secondary); // conch
+      box(body, 0.08, 0.08, 0.08, 0.3, 0.42, 0.14, p.accent, 0x2f8f9d);
+      break;
     case 'orrin':
       box(body, 0.32, 0.1, 0.3, 0, 0.72, 0, p.primary); // cap
       box(body, 0.04, 0.24, 0.1, 0.12, 0.76, -0.08, p.accent); // feather
@@ -152,6 +202,12 @@ export function buildHeroModel(heroId: string, side: Side): HeroModel {
       box(body, 0.06, 0.3, 0.05, 0.1, 0.36, 0.17, 0x6b5232); // neck
       break;
   }
+  if (skin === 'legend') {
+    // Floating golden rune above the head.
+    box(body, 0.1, 0.1, 0.1, 0, 1.02, 0, 0xffd166, 0xc08a10).rotation.set(0.6, 0.6, 0);
+  }
+  if (skin === 'veteran') box(body, 0.36, 0.04, 0.24, 0, 0.47, 0, 0xd9a441, 0x6a4a10); // gilded collar
+
   const meshes: THREE.Mesh[] = [];
   body.traverse((o) => {
     if (o instanceof THREE.Mesh) meshes.push(o);
@@ -159,17 +215,12 @@ export function buildHeroModel(heroId: string, side: Side): HeroModel {
   return { root, body, ring, meshes };
 }
 
-/** Renders a small portrait of each hero to data URLs (for cards and the turn bar). */
-export function renderPortraits(heroIds: string[], sides: Side[] = ['player', 'enemy']): Map<string, string> {
-  const out = new Map<string, string>();
-  const size = 160;
-  let renderer: THREE.WebGLRenderer;
-  try {
-    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
-  } catch {
-    return out;
-  }
-  renderer.setSize(size, size);
+let portraitRig: { renderer: THREE.WebGLRenderer; scene: THREE.Scene; cam: THREE.OrthographicCamera } | null = null;
+
+function rig() {
+  if (portraitRig) return portraitRig;
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+  renderer.setSize(160, 160);
   renderer.setPixelRatio(1);
   const scene = new THREE.Scene();
   scene.add(new THREE.HemisphereLight(0xfff4e0, 0x404a5a, 2.2));
@@ -179,21 +230,111 @@ export function renderPortraits(heroIds: string[], sides: Side[] = ['player', 'e
   const cam = new THREE.OrthographicCamera(-0.5, 0.5, 0.5, -0.5, 0.1, 10);
   cam.position.set(0.9, 1.05, 1.9);
   cam.lookAt(0, 0.5, 0);
-  for (const side of sides) {
-    for (const id of heroIds) {
-      const model = buildHeroModel(id, side);
-      model.ring.visible = false;
-      model.root.rotation.y = -0.35;
-      model.root.position.y = 0.05;
-      scene.add(model.root);
-      cam.zoom = 0.95;
-      cam.updateProjectionMatrix();
-      renderer.render(scene, cam);
-      out.set(`${id}:${side}`, renderer.domElement.toDataURL('image/png'));
-      scene.remove(model.root);
-    }
+  cam.zoom = 0.95;
+  cam.updateProjectionMatrix();
+  portraitRig = { renderer, scene, cam };
+  return portraitRig;
+}
+
+/** Renders one hero portrait to a data URL (shared offscreen renderer). */
+export function renderPortrait(heroId: string, side: Side, skin: SkinId = 'classic'): string {
+  try {
+    const { renderer, scene, cam } = rig();
+    const model = buildHeroModel(heroId, side, skin);
+    model.ring.visible = false;
+    model.root.rotation.y = -0.35;
+    model.root.position.y = 0.05;
+    scene.add(model.root);
+    renderer.render(scene, cam);
+    const url = renderer.domElement.toDataURL('image/png');
+    scene.remove(model.root);
+    return url;
+  } catch {
+    return '';
   }
-  renderer.dispose();
-  renderer.forceContextLoss();
+}
+
+/** Renders the default portraits of every hero for both sides. */
+export function renderPortraits(heroIds: string[], sides: Side[] = ['player', 'enemy']): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const side of sides) for (const id of heroIds) out.set(`${id}:${side}:classic`, renderPortrait(id, side));
   return out;
+}
+
+/** A small voxel diorama of the guild keep with a few heroes at the gate, for the hub. */
+export function renderGuildHall(heroIds: string[], skins: (id: string) => SkinId): string {
+  try {
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+    renderer.setSize(560, 300);
+    renderer.setPixelRatio(1);
+    renderer.shadowMap.enabled = true;
+    const scene = new THREE.Scene();
+    scene.add(new THREE.HemisphereLight(0xfff1d6, 0x3a4660, 1.8));
+    const sun = new THREE.DirectionalLight(0xfff0d0, 2.2);
+    sun.position.set(-3, 6, 4);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(1024, 1024);
+    scene.add(sun);
+    const g = new THREE.Group();
+    scene.add(g);
+    const add = (w: number, h: number, d: number, x: number, y: number, z: number, color: number, emissive = 0) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(color, emissive));
+      m.position.set(x, y + h / 2, z);
+      m.castShadow = true;
+      m.receiveShadow = true;
+      g.add(m);
+      return m;
+    };
+    // Island and courtyard
+    add(6.4, 0.5, 4.4, 0, -0.5, 0, 0x6e5338);
+    add(6.4, 0.12, 4.4, 0, -0.06, 0, 0x74ad52);
+    add(2.2, 0.06, 1.6, 0, 0.0, 1.2, 0xbdb497);
+    // Keep
+    add(3.2, 1.6, 1.6, 0, 0, -0.8, 0x8d8f96);
+    add(3.4, 0.2, 1.8, 0, 1.6, -0.8, 0x7a7c84);
+    for (let i = -1.5; i <= 1.5; i += 0.5) add(0.25, 0.25, 0.25, i, 1.8, 0.05, 0x9a9ca3);
+    add(0.9, 1.0, 0.1, 0, 0, 0.02, 0x4a3420); // gate
+    add(0.9, 0.12, 0.12, 0, 1.0, 0.04, 0x6b5232);
+    // Towers
+    for (const x of [-1.9, 1.9]) {
+      add(1.0, 2.4, 1.0, x, 0, -0.7, 0x9a9ca3);
+      add(1.2, 0.5, 1.2, x, 2.4, -0.7, 0x5a3e6e);
+      add(0.6, 0.4, 0.6, x, 2.9, -0.7, 0x5a3e6e);
+      add(0.05, 0.7, 0.05, x, 3.3, -0.7, 0x6b5232);
+      add(0.4, 0.26, 0.04, x + 0.22, 3.68, -0.7, 0x4aa3ff); // banner
+    }
+    // Hanging banners on the keep
+    for (const x of [-0.9, 0.9]) add(0.4, 0.8, 0.04, x, 0.6, 0.02, 0x4aa3ff).position.z = 0.03;
+    add(0.18, 0.18, 0.05, -0.9, 1.0, 0.06, 0xd9a441, 0x6a4a10);
+    add(0.18, 0.18, 0.05, 0.9, 1.0, 0.06, 0xd9a441, 0x6a4a10);
+    // Trees
+    for (const [x, z] of [
+      [-2.7, 1.5],
+      [2.7, 1.3],
+      [2.5, -1.8],
+    ]) {
+      add(0.12, 0.3, 0.12, x, 0, z, 0x6b4a2b);
+      add(0.5, 0.4, 0.5, x, 0.3, z, 0x2f6b34);
+      add(0.3, 0.25, 0.3, x, 0.7, z, 0x3d8442);
+    }
+    // Heroes at the gate
+    heroIds.slice(0, 4).forEach((id, i) => {
+      const model = buildHeroModel(id, 'player', skins(id));
+      model.ring.visible = false;
+      model.root.scale.setScalar(0.8);
+      model.root.position.set(-1.35 + i * 0.9, 0.06, 1.35 + (i % 2) * 0.25);
+      model.root.rotation.y = 0.15 - i * 0.1;
+      g.add(model.root);
+    });
+    const cam = new THREE.OrthographicCamera(-3.6, 3.6, 1.95, -1.95, 0.1, 50);
+    cam.position.set(4.5, 4.6, 7.5);
+    cam.lookAt(0, 0.9, 0);
+    renderer.render(scene, cam);
+    const url = renderer.domElement.toDataURL('image/png');
+    renderer.dispose();
+    renderer.forceContextLoss();
+    return url;
+  } catch {
+    return '';
+  }
 }

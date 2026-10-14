@@ -3,6 +3,7 @@ import { planTurn } from '../src/domain/ai';
 import { applyCommand, cloneState, createBattle } from '../src/domain/battle';
 import { MAPS, buildBoard } from '../src/domain/board';
 import { HEROES, findAbility } from '../src/domain/heroes';
+import { applyTraits } from '../src/domain/traits';
 
 const N = Number(process.argv[2] ?? 200);
 const ids = HEROES.map((h) => h.id);
@@ -23,7 +24,7 @@ for (let m = 0; m < N; m++) {
   };
   const P = pick(), E = pick();
   const pp = spots([5, 4]), ep = spots([0, 1]);
-  const s = createBattle(board, P.map((heroId, i) => ({ heroId, pos: pp[i] })), E.map((heroId, i) => ({ heroId, pos: ep[i] }))).state;
+  const s = createBattle(board, applyTraits(P.map((heroId, i) => ({ heroId, pos: pp[i] }))), applyTraits(E.map((heroId, i) => ({ heroId, pos: ep[i] })))).state;
   let timeout = false;
   while (!s.winner) {
     const t = performance.now();

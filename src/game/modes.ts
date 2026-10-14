@@ -15,7 +15,10 @@ import {
   totalBonus,
   type ExpeditionState,
 } from '../domain/expedition';
-import { CLASS_GLYPH, CLASS_LABEL, getHero } from '../domain/heroes';
+import { CLASS_GLYPH, CLASS_LABEL, HEROES, getHero, heroAbilities } from '../domain/heroes';
+import { renderGuildHall } from '../render/models';
+import { teamTraits } from '../domain/traits';
+import { BADGE, chooseSkin, LEVEL_REWARD, LEVEL_XP, levelFor, levelProgress, SKINS, skinOf } from './mastery';
 import { PUZZLES, type Puzzle } from '../domain/puzzles';
 import type { Stats } from '../domain/types';
 import { audio } from '../ui/audio';
@@ -36,6 +39,8 @@ export class Modes {
   private el: HTMLDivElement;
   private draft: DraftState = newDraft();
   private abandonArmed = false;
+  private hallKey = '';
+  private hallUrl = '';
 
   constructor(
     private app: HTMLElement,
@@ -82,6 +87,16 @@ export class Modes {
     const today = dailyRec.results[daily.date];
     const puzzles = load<PuzzleRecord>('puzzles', { solved: [] });
     const r = this.game.recordSummary();
+    const m = this.game.masteryProfile;
+    const totalXp = Object.values(m.xp).reduce((a, b) => a + b, 0);
+    const maxed = HEROES.filter((h) => levelFor(m.xp[h.id] ?? 0) >= 5).length;
+    // The keep shows the four heroes with the most mastery (or a default squad).
+    const favourites = [...HEROES].sort((a, b) => (m.xp[b.id] ?? 0) - (m.xp[a.id] ?? 0)).slice(0, 4).map((h) => h.id);
+    const hallKey = favourites.map((id) => `${id}:${skinOf(m, id)}`).join(',');
+    if (hallKey !== this.hallKey) {
+      this.hallKey = hallKey;
+      this.hallUrl = renderGuildHall(favourites, (id) => skinOf(m, id));
+    }
 
     const card = (id: string, eyebrow: string, title: string, body: string, status: string, cta: string, accent = false) => `
       <article class="mode-card${accent ? ' accent' : ''}">
@@ -99,9 +114,12 @@ export class Modes {
             <h1 class="logo">Guild <span>Tactics</span></h1>
             <p class="tagline">Combate tático por turnos em voxel. Forma equipas, explora elementos e sinergias, e vence pelo posicionamento: todo o dano é previsível.</p>
           </div>
-          <div class="record">
-            <div><b class="num">${r.wins}</b> vitórias · <b class="num">${r.losses}</b> derrotas</div>
-            <div>Expedições conquistadas: <b class="num">${expRec.wins}</b></div>
+          <div class="hall">
+            ${this.hallUrl ? `<img class="hall-img" alt="A fortaleza da guilda com os teus heróis favoritos à porta" src="${this.hallUrl}" />` : ''}
+            <div class="record">
+              <div><b class="num">${r.wins}</b> vitórias · <b class="num">${r.losses}</b> derrotas</div>
+              <div>Expedições conquistadas: <b class="num">${expRec.wins}</b></div>
+            </div>
           </div>
         </div>
         <div class="hub-grid">
@@ -126,6 +144,7 @@ export class Modes {
           ${card('draft', 'Combate livre', 'Draft', 'Tu e o adversário escolhem heróis à vez de um conjunto comum. Cada escolha tira opções ao outro.', 'Ordem: 1-2-2-2-1', 'Começar')}
           ${card('puzzles', 'Treino tático', 'Puzzles', 'Situações fixas para resolver num só turno. Ensinam cerco, empurrões, trocas e supremos.', `${puzzles.solved.length} de ${PUZZLES.length} resolvidos`, 'Abrir')}
           ${card('tutorial', tutorialDone ? 'Treino' : 'Começa aqui', 'Campo de Treino', 'Um combate guiado de 2 contra 2 que ensina mover, atacar, elementos, zona de ameaça e supremos.', tutorialDone ? 'Concluído' : '2 minutos', tutorialDone ? 'Repetir' : 'Começar', !tutorialDone)}
+          ${card('collection', 'A tua guilda', 'Coleção', `${HEROES.length} heróis, traços de guilda e maestria. Cada partida dá XP aos heróis que lutaram; os níveis desbloqueiam insígnias e visuais.`, `${totalXp} XP · ${maxed} herói${maxed === 1 ? '' : 's'} no nível máximo`, 'Abrir')}
           ${this.extraCards()}
         </div>
       </div>`);
@@ -136,6 +155,7 @@ export class Modes {
     this.on('[data-mode="draft"]', () => this.openDraft());
     this.on('[data-mode="puzzles"]', () => this.showPuzzles());
     this.on('[data-mode="tutorial"]', () => this.game.startTutorial());
+    this.on('[data-mode="collection"]', () => this.showCollection());
     this.el.querySelectorAll<HTMLElement>('[data-extra]').forEach((n) => n.addEventListener('click', () => this.onExtraCard(n.dataset.extra!)));
   }
 
@@ -505,5 +525,66 @@ export class Modes {
         });
       },
     });
+  }
+
+  // =============================================================== collection
+
+  private showCollection(focus?: string) {
+    const m = this.game.masteryProfile;
+    const cards = HEROES.map((h) => {
+      const xp = m.xp[h.id] ?? 0;
+      const prog = levelProgress(xp);
+      const current = skinOf(m, h.id);
+      const skins = SKINS.map((sk) => {
+        const unlocked = sk.level <= prog.level;
+        return `<button class="skin${current === sk.id ? ' on' : ''}" data-hero="${h.id}" data-skin="${sk.id}" ${unlocked ? '' : 'disabled'} title="${unlocked ? sk.name : `Desbloqueia no nível ${sk.level}`}">
+          <img alt="" src="${unlocked ? this.game.portrait(h.id, 'player', sk.id) : ''}" />
+          <span>${unlocked ? sk.name : `nv ${sk.level}`}</span></button>`;
+      }).join('');
+      const abilities = heroAbilities(h)
+        .filter((a) => a.id !== 'attack' && a.id !== 'defend')
+        .map((a) => `<li><b>${esc(a.name)}</b>${a.ultimate ? ' <span class="q">supremo</span>' : a.quick ? ' <span class="q">rápida</span>' : ''} — ${esc(a.description.replace(/^Supremo: /, ''))}</li>`)
+        .join('');
+      const next = prog.level < LEVEL_XP.length ? `${prog.into}/${prog.span} XP para o nível ${prog.level + 1}: ${LEVEL_REWARD[prog.level + 1]}` : 'Nível máximo';
+      return `<article class="coll-card" id="coll-${h.id}">
+        <div class="coll-head">
+          <img alt="" src="${this.game.portrait(h.id)}" />
+          <div>
+            <div class="coll-name">${esc(h.name)} <span class="lvl">${BADGE[prog.level]} nv ${prog.level}</span></div>
+            <div class="coll-sub">${esc(h.title)} · <span class="chip ${h.heroClass}">${CLASS_GLYPH[h.heroClass]} ${CLASS_LABEL[h.heroClass]}</span> ${this.game.elementChip(h.element)}</div>
+            <div class="bigbar xp"><i style="width:${Math.round((prog.into / prog.span) * 100)}%;background:var(--brass)"></i></div>
+            <div class="coll-next">${next}</div>
+          </div>
+        </div>
+        <div class="stats num"><span>PV<b>${h.stats.maxHp}</b></span><span>ATQ<b>${h.stats.atk}</b></span><span>DEF<b>${h.stats.def}</b></span><span>MOV<b>${h.stats.mov}</b></span><span>VEL<b>${h.stats.spd}</b></span></div>
+        <ul class="coll-abil">${abilities}</ul>
+        <div class="skins">${skins}</div>
+      </article>`;
+    }).join('');
+    const traitRef = teamTraits(['brann', 'dagna', 'lyra', 'nyx', 'seren', 'fenna', 'mira', 'orrin'])
+      .filter((t) => !t.id.startsWith('attune'))
+      .map((t) => `<li><b>${esc(t.name)}</b> — ${esc(t.description)}</li>`)
+      .join('');
+    this.show(`
+      <div class="select-wrap">
+        <div>
+          <button class="btn ghost back-btn" id="co-back">‹ Salão</button>
+          <div class="eyebrow">A tua guilda</div>
+          <h1 class="page-title">Coleção</h1>
+          <p class="tagline">Cada partida dá XP aos heróis que lutaram (mais por vitória, abates e MVP). A maestria só desbloqueia visuais e insígnias: nunca dá vantagem em combate.</p>
+        </div>
+        <details class="howto"><summary>Traços de guilda</summary><ul class="trait-ref">${traitRef}<li><b>Sintonia</b> — 2+ heróis do mesmo elemento: +1 ATQ e +3 PV (3+: +2 ATQ e +6 PV).</li></ul></details>
+        <div class="coll-grid">${cards}</div>
+      </div>`);
+    this.on('#co-back', () => this.showHub());
+    this.el.querySelectorAll<HTMLButtonElement>('[data-skin]').forEach((b) =>
+      b.addEventListener('click', () => {
+        chooseSkin(b.dataset.hero!, b.dataset.skin as (typeof SKINS)[number]['id']);
+        this.game.refreshMastery();
+        audio.play('click');
+        this.showCollection(b.dataset.hero);
+      }),
+    );
+    if (focus) this.el.querySelector(`#coll-${focus}`)?.scrollIntoView({ block: 'center' });
   }
 }
