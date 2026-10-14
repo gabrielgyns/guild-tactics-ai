@@ -2,7 +2,7 @@ import type { Deployment } from '../domain/battle';
 import { buildBoard, MAPS } from '../domain/board';
 import { dailyChallenge } from '../domain/daily';
 import { autoDeploy } from '../domain/deploy';
-import { aiDraftPick, available, draftPick, draftSide, newDraft, type DraftState } from '../domain/draft';
+import { aiDraftPick, available, DRAFT_ORDER, draftPick, draftSide, draftStep, newDraft, type DraftState } from '../domain/draft';
 import {
   chooseReward,
   EXPEDITION_STAGES,
@@ -141,7 +141,7 @@ export class Modes {
             today?.won ? 'Melhorar' : 'Jogar',
           )}
           ${card('quick', 'Combate livre', 'Partida rápida', 'Escolhe quatro heróis e enfrenta uma equipa aleatória num dos mapas.', `${r.wins}–${r.losses}`, 'Jogar')}
-          ${card('draft', 'Combate livre', 'Draft', 'Tu e o adversário escolhem heróis à vez de um conjunto comum. Cada escolha tira opções ao outro.', 'Ordem: 1-2-2-2-1', 'Começar')}
+          ${card('draft', 'Combate livre', 'Draft', 'Cada lado bloqueia um herói; depois escolhem à vez de um conjunto comum. Cada escolha tira opções ao outro.', '1 bloqueio · ordem 1-2-2-2-1', 'Começar')}
           ${card('puzzles', 'Treino tático', 'Puzzles', 'Situações fixas para resolver num só turno. Ensinam cerco, empurrões, trocas e supremos.', `${puzzles.solved.length} de ${PUZZLES.length} resolvidos`, 'Abrir')}
           ${card('tutorial', tutorialDone ? 'Treino' : 'Começa aqui', 'Campo de Treino', 'Um combate guiado de 2 contra 2 que ensina mover, atacar, elementos, zona de ameaça e supremos.', tutorialDone ? 'Concluído' : '2 minutos', tutorialDone ? 'Repetir' : 'Começar', !tutorialDone)}
           ${card('collection', 'A tua guilda', 'Coleção', `${HEROES.length} heróis, traços de guilda e maestria. Cada partida dá XP aos heróis que lutaram; os níveis desbloqueiam insígnias e visuais.`, `${totalXp} XP · ${maxed} herói${maxed === 1 ? '' : 's'} no nível máximo`, 'Abrir')}
@@ -387,6 +387,8 @@ export class Modes {
   private renderDraft() {
     const d = this.draft;
     const side = draftSide(d);
+    const step = draftStep(d);
+    const banning = step?.action === 'ban';
     const slots = (ids: string[], who: 'player' | 'enemy') =>
       [0, 1, 2, 3]
         .map((i) => (ids[i] ? `<div class="draft-slot filled ${who}"><img alt="" src="${this.game.portrait(ids[i], who)}" /><span>${esc(getHero(ids[i]).name)}</span></div>` : `<div class="draft-slot"></div>`))
@@ -394,7 +396,7 @@ export class Modes {
     const pool = available(d)
       .map((id) => {
         const h = getHero(id);
-        return `<button class="draft-hero" data-pick="${id}" ${side === 'player' ? '' : 'disabled'}>
+        return `<button class="draft-hero${banning ? ' banning' : ''}" data-pick="${id}" ${side === 'player' ? '' : 'disabled'}>
           <img alt="" src="${this.game.portrait(id)}" />
           <b>${esc(h.name)}</b>
           <span class="chip ${h.heroClass}">${CLASS_GLYPH[h.heroClass]} ${CLASS_LABEL[h.heroClass]}</span>
@@ -402,18 +404,32 @@ export class Modes {
         </button>`;
       })
       .join('');
-    const status = side === 'player' ? 'A tua vez: escolhe um herói.' : side === 'enemy' ? 'O adversário está a escolher…' : 'Equipas completas.';
+    const status = !step
+      ? 'Equipas completas.'
+      : side === 'player'
+        ? banning
+          ? 'Bloqueia um herói: nenhum lado o poderá usar.'
+          : 'A tua vez: escolhe um herói.'
+        : banning
+          ? 'O adversário está a bloquear…'
+          : 'O adversário está a escolher…';
+    const bans = d.bans.length
+      ? `<div class="draft-bans"><span class="eyebrow">Bloqueados</span>${d.bans
+          .map((b) => `<span class="ban ${b.side}"><img alt="" src="${this.game.portrait(b.heroId, 'enemy', 'classic')}" />${esc(getHero(b.heroId).name)}</span>`)
+          .join('')}</div>`
+      : '';
     this.show(`
       <div class="select-wrap">
         <div>
           <button class="btn ghost back-btn" id="dr-back">‹ Salão</button>
-          <div class="eyebrow">Draft · escolha ${Math.min(d.turn + 1, 8)} de 8</div>
+          <div class="eyebrow">Draft · passo ${Math.min(d.turn + 1, DRAFT_ORDER.length)} de ${DRAFT_ORDER.length}${step ? ` · ${banning ? 'bloqueio' : 'escolha'}` : ''}</div>
           <h1 class="page-title">${status}</h1>
         </div>
         <div class="draft-teams">
           <div><h3 class="eyebrow">Tu</h3><div class="draft-row">${slots(d.player, 'player')}</div></div>
           <div><h3 class="eyebrow">Adversário</h3><div class="draft-row">${slots(d.enemy, 'enemy')}</div></div>
         </div>
+        ${bans}
         ${side ? `<div class="draft-pool">${pool}</div>` : `<div><button class="btn primary" id="dr-go">Posicionar ›</button> <button class="btn ghost" id="dr-again">Recomeçar draft</button></div>`}
       </div>`);
     this.on('#dr-back', () => this.showHub());

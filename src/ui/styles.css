@@ -1340,3 +1340,7 @@ table.stats-table {
   .hall { justify-items: start; }
   .coll-grid { grid-template-columns: minmax(0, 1fr); }
 }
+.draft-bans { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.ban { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); text-decoration: line-through; padding: 2px 8px 2px 2px; border: 1px solid var(--line); border-radius: var(--radius); }
+.ban img { width: 32px; height: 32px; filter: grayscale(1); }
+.draft-hero.banning:hover:not(:disabled) { border-color: var(--foe); }

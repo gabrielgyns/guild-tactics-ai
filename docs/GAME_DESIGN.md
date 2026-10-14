@@ -116,7 +116,7 @@ Enfraquecido (−30% de dano causado), Fortalecido (+ATQ), Em guarda (−50% de 
 | Kael | Guerreiro (duelista) | 30 | 11 | 4 | 3 | 6 | 1 | Rodopio, Execução, Fúria* |
 | Lyra | Arqueiro (atiradora) | 20 | 9 | 2 | 3 | 7 | 2–3 | Tiro Certeiro, Flecha Marcadora, Chuva de Flechas |
 | Tobin | Arqueiro (caçador) | 22 | 8 | 3 | 4 | 8 | 2–3 | Rede, Tiro Repulsor, Salto* |
-| Seren | Mago (fogo) | 18 | 11 | 1 | 3 | 5 | 1–3 m | Bola de Fogo, Brasas, Meteoro |
+| Seren | Mago (fogo) | 18 | 10 | 1 | 3 | 5 | 1–3 m | Bola de Fogo, Brasas, Meteoro |
 | Vex | Mago (gelo/controlo) | 20 | 9 | 2 | 3 | 5 | 1–3 m | Prisão de Gelo, Lança de Gelo, Troca Arcana |
 | Mira | Suporte (cura) | 22 | 6 | 3 | 3 | 6 | 1–2 m | Cura, Bênção*, Aurora |
 | Orrin | Suporte (tático) | 24 | 7 | 3 | 3 | 7 | 1–2 | Grito de Guerra, Inspirar, Canção Lânguida |
@@ -153,7 +153,7 @@ O **Salão da Guilda** (menu principal) dá acesso a todos os modos. Todos usam 
 | **Expedição** | 5 combates seguidos com inimigos cada vez mais fortes (+1 ATQ e +3 PV por etapa; a 5.ª é elite). A vida passa de combate para combate (+20% de descanso). Depois de cada vitória escolhes 1 de 3 recompensas: relíquia (bónus para a equipa), treino (+2 ATQ, +5 PV a um herói), acampamento, ritual (reviver caídos) ou recruta (substitui um caído). Perder um combate termina a expedição. A expedição em curso fica guardada no browser. | `src/domain/expedition.ts` |
 | **Desafio diário** | Mapa, equipas e modificador gerados a partir da data: iguais para todos no mesmo dia. Guarda a melhor vitória (menos rondas). | `src/domain/daily.ts` |
 | **Partida rápida** | Escolhe 4 heróis contra uma equipa aleatória (uma de cada classe). | — |
-| **Draft** | Escolhas alternadas 1-2-2-2-1 de um conjunto comum; a IA cobre classes em falta e procura vantagem elemental. | `src/domain/draft.ts` |
+| **Draft** | Cada lado bloqueia um herói; depois escolhas alternadas 1-2-2-2-1 de um conjunto comum. A IA cobre classes em falta, procura vantagem elemental e bloqueia o herói que mais ajudaria o jogador. | `src/domain/draft.ts` |
 | **Puzzles** | Situações fixas para vencer numa só ronda. Um solucionador exaustivo (`solvePuzzle`) prova que cada um tem solução e que a ideia-chave é necessária (`scripts/puzzle-idea.ts`). | `src/domain/puzzles.ts` |
 | **Treino** | Combate guiado de 2 contra 2 em 8 passos. | `src/game/tutorial.ts` |
 
@@ -189,7 +189,7 @@ A visão de longo prazo junta quatro referências, cada uma a contribuir com uma
 Ordem proposta (de trás para a frente: cada camada só entra se a anterior prender os jogadores):
 
 1. **Clareza e profundidade do combate** — zona de ameaça ✅, energia e supremos ✅, elementos ✅, santuários (objetivo de mapa) ✅, tutorial guiado ✅, som e zoom ✅.
-2. **Rejogabilidade** — modo Expedição ✅, desafio diário ✅, draft ✅, puzzles táticos ✅, Salão da Guilda (menu) ✅.
+2. **Rejogabilidade** — modo Expedição ✅, desafio diário ✅, draft com bloqueios ✅, puzzles táticos ✅, Salão da Guilda (menu) ✅.
 3. **Coleção e identidade** — 12 heróis ✅, traços de guilda ✅, maestria com insígnias e visuais ✅, ecrã de Coleção ✅, fortaleza voxel no Salão ✅. A seguir: vínculos entre heróis, evolução de classe, equipamento.
 4. **Fortaleza da guilda** — base com edifícios que dão recursos e melhorias.
 5. **PvP assíncrono e guildas** — defesas, ranking por temporada, guerras de guilda. As regras já são puras e determinísticas, por isso uma partida pode ser reproduzida a partir da lista de comandos.
