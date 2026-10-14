@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { posKey, samePos, terrainAt } from '../domain/board';
 import { findAbility, getHero } from '../domain/heroes';
 import type { BattleEvent, BattleState, Board, DamageTag, Pos, StatusKind, Unit } from '../domain/types';
-import { buildHeroModel, mat, type HeroModel } from './models';
+import { buildHeroModel, mat, type HeroModel, type SkinId } from './models';
 import { ELEMENT_COLOR } from '../domain/elements';
 
 export type HighlightKind = 'move' | 'moveDanger' | 'attack' | 'range' | 'area' | 'heal' | 'deploy' | 'select' | 'path' | 'threat';
@@ -121,6 +121,8 @@ export class BattleView {
   private overlayTexSoft = overlayTexture(false);
   private overlayTexStrong = overlayTexture(true);
   speed = 1;
+  /** Cosmetic skin per hero (player side only); set by the game from the mastery profile. */
+  skinOf: (heroId: string, side: Unit['side']) => SkinId = () => 'classic';
 
   onHover: (p: Pos | null) => void = () => {};
   onClick: (p: Pos, pointerType: string) => void = () => {};
@@ -445,7 +447,7 @@ export class BattleView {
   }
 
   private createUnitView(u: Unit): UnitView {
-    const model = buildHeroModel(u.heroId, u.side);
+    const model = buildHeroModel(u.heroId, u.side, this.skinOf(u.heroId, u.side));
     model.root.userData.unitId = u.id;
     model.root.rotation.y = u.side === 'player' ? Math.PI : 0;
     this.scene.add(model.root);

@@ -27,7 +27,9 @@ import type { Ability, Element, BattleEvent, BattleState, Board, Command, HeroCl
 import type { MapDef } from '../domain/board';
 import { ELEMENT_COLOR, ELEMENT_GLYPH, ELEMENT_LABEL, elementMatchup } from '../domain/elements';
 import { STATUS_GLYPH, STATUS_LABEL, BattleView, type HighlightKind } from '../render/view';
-import { renderPortraits } from '../render/models';
+import { renderPortrait, renderPortraits } from '../render/models';
+import { applyTraits, teamTraits, type Trait } from '../domain/traits';
+import { awardMastery, BADGE, levelFor, loadMastery, masteryHtml, skinOf, type MasteryProfile, type Skin } from './mastery';
 import { audio, type Sfx } from '../ui/audio';
 import { TUTORIAL_ENEMY, TUTORIAL_MAP, TUTORIAL_PLAYER, TUTORIAL_STEPS } from './tutorial';
 
@@ -130,6 +132,8 @@ export interface PickerOptions {
 
 export class Game {
   private portraits = new Map<string, string>();
+  private mastery: MasteryProfile = loadMastery();
+  private lastMasteryHtml = '';
   private team: string[] = [];
   private difficulty: Difficulty = 'recruit';
   private record = loadRecord();
@@ -178,8 +182,33 @@ export class Game {
     window.addEventListener('keydown', unlock);
   }
 
-  portrait(heroId: string, side: Side = 'player') {
-    return this.portraits.get(`${heroId}:${side}`) ?? '';
+  /** Portrait data URL; player-side portraits use the hero's chosen skin. Rendered lazily and cached. */
+  portrait(heroId: string, side: Side = 'player', skin?: Skin) {
+    const sk = skin ?? (side === 'player' ? skinOf(this.mastery, heroId) : 'classic');
+    const key = `${heroId}:${side}:${sk}`;
+    let url = this.portraits.get(key);
+    if (url === undefined) {
+      url = renderPortrait(heroId, side, sk);
+      this.portraits.set(key, url);
+    }
+    return url;
+  }
+
+  refreshMastery() {
+    this.mastery = loadMastery();
+  }
+
+  get masteryProfile() {
+    return this.mastery;
+  }
+
+  /** Chips describing a team's guild traits; inactive ones show progress. */
+  traitsHtml(heroIds: string[], onlyActive = false) {
+    const traits = teamTraits(heroIds).filter((t) => t.active || (!onlyActive && t.progress !== '0/2' && !t.id.startsWith('attune')));
+    if (!traits.length) return '';
+    return `<div class="traits">${traits
+      .map((t: Trait) => `<span class="trait${t.active ? ' on' : ''}" title="${esc(t.description)}">${t.active ? '◆' : '◇'} ${esc(t.name)}${t.active ? '' : ` ${t.progress}`}</span>`)
+      .join('')}</div>`;
   }
 
   // =============================================================== team select
@@ -249,7 +278,7 @@ export class Game {
         <div>
           <span class="chip ${h.heroClass}">${CLASS_GLYPH[h.heroClass]} ${CLASS_LABEL[h.heroClass]}</span>
           ${this.elementChip(h.element)}
-          <h3>${esc(h.name)}</h3>
+          <h3>${esc(h.name)} <span class="lvl" title="Nível de maestria">${BADGE[levelFor(this.mastery.xp[h.id] ?? 0)]} nv ${levelFor(this.mastery.xp[h.id] ?? 0)}</span></h3>
           <div class="htitle">${esc(h.title)} · alcance ${h.attack.min}–${h.attack.max}${h.attack.magic ? ' mágico' : ''}</div>
           <div class="stats num">
             <span>PV<b>${s.maxHp}</b></span><span>ATQ<b>${s.atk}</b></span><span>DEF<b>${s.def}</b></span><span>MOV<b>${s.mov}</b></span><span>VEL<b>${s.spd}</b></span>
@@ -295,6 +324,7 @@ export class Game {
           </div>
           <div class="squad-hint">
             <span>${comp}</span>
+            ${this.traitsHtml(this.team)}
             ${
               o.showDifficulty
                 ? `<span style="margin-left:auto">Adversário:</span>
@@ -407,6 +437,7 @@ export class Game {
     el.querySelectorAll<HTMLElement>('[data-ref]').forEach((n) => (this.el[n.dataset.ref!] = n));
 
     this.view = new BattleView(el.querySelector('.stage')!, el.querySelector('.tag-layer')!);
+    this.view.skinOf = (heroId, side) => (side === 'player' ? skinOf(this.mastery, heroId) : 'classic');
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) this.view.speed = 2.5;
     this.view.onHover = (p) => this.onHover(p);
     this.view.onClick = (p, type) => this.onClick(p, type);
@@ -495,8 +526,12 @@ export class Game {
     this.spec = spec;
     this.map = spec.map;
     this.board = buildBoard(spec.map);
-    this.playerDeploy = spec.player.map((d) => ({ ...d, pos: { ...d.pos } }));
-    this.enemyDeploy = spec.enemy.map((d) => ({ ...d, pos: { ...d.pos } }));
+    // Guild traits apply to both sides, except in scripted modes where numbers are hand-tuned.
+    const traits = spec.kind !== 'tutorial' && spec.kind !== 'puzzle';
+    const prep = (team: Deployment[]) => (traits ? applyTraits(team) : team).map((d) => ({ ...d, pos: { ...d.pos } }));
+    this.playerDeploy = prep(spec.player);
+    this.enemyDeploy = prep(spec.enemy);
+    this.lastMasteryHtml = '';
     this.tutorialStep = 0;
     this.deploySelected = null;
     this.battleEl.querySelectorAll('.modal-back, .tutorial').forEach((n) => n.remove());
@@ -551,6 +586,7 @@ export class Game {
           <h2>Posiciona a tua equipa</h2>
         </div>
         <p>Guerreiros à frente aguentam o embate; arqueiros e magos rendem mais atrás, de preferência numa colina. Inimigos visíveis do outro lado.</p>
+        ${this.spec.kind !== 'tutorial' && this.spec.kind !== 'puzzle' ? `<div class="deploy-traits"><span>Os teus traços</span>${this.traitsHtml(this.playerDeploy.map((d) => d.heroId), true) || '<span class="muted">nenhum</span>'}<span>Adversário</span>${this.traitsHtml(this.enemyDeploy.map((d) => d.heroId), true) || '<span class="muted">nenhum</span>'}</div>` : ''}
         <div class="deploy-row">
           <div class="foes"><span>Adversários</span>${foes}</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -1201,6 +1237,10 @@ export class Game {
       saveRecord(this.record);
     }
     audio.play(won ? 'victory' : 'defeat');
+    if (!surrendered && this.spec.kind !== 'tutorial' && this.spec.kind !== 'puzzle') {
+      this.lastMasteryHtml = masteryHtml(awardMastery(s));
+      this.refreshMastery();
+    }
     if (!surrendered) {
       this.banner(won ? 'Vitória' : draw ? 'Empate' : 'Derrota', '', won ? 'player' : 'enemy');
       await this.view.wait(1100);
@@ -1268,6 +1308,7 @@ export class Game {
         <div class="kpi"><b class="num">${this.record.wins}–${this.record.losses}</b><span>registo (partidas rápidas)</span></div>
       </div>
       ${opts.extraHtml ?? ''}
+      ${this.lastMasteryHtml}
       <div class="table-wrap"><table class="stats-table">
         <thead><tr><th>Herói</th><th>Dano</th><th>Cura</th><th>Sofrido</th><th>Abates</th></tr></thead>
         <tbody>${rows}</tbody>

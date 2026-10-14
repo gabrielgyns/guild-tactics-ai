@@ -71,10 +71,10 @@ Vantagem: **×1,3** de dano; desvantagem: **×0,8**. O elemento é do herói (to
 | Elemento | Heróis |
 | --- | --- |
 | 🔥 Fogo | Kael, Seren |
-| 💧 Água | Tobin, Vex |
-| 🌿 Natureza | Brann, Lyra |
-| ☀ Luz | Mira |
-| ☾ Sombra | Orrin |
+| 💧 Água | Tobin, Vex, Maris |
+| 🌿 Natureza | Brann, Lyra, Fenna |
+| ☀ Luz | Mira, Dagna |
+| ☾ Sombra | Orrin, Nyx |
 
 ### Terreno
 | Terreno | Movimento | Efeito |
@@ -121,7 +121,28 @@ Enfraquecido (−30% de dano causado), Fortalecido (+ATQ), Em guarda (−50% de 
 | Mira | Suporte (cura) | 22 | 6 | 3 | 3 | 6 | 1–2 m | Cura, Bênção*, Aurora |
 | Orrin | Suporte (tático) | 24 | 7 | 3 | 3 | 7 | 1–2 | Grito de Guerra, Inspirar, Canção Lânguida |
 
-`*` ação rápida · `m` ataque mágico. Todos têm também **Atacar** e **Defender**.
+| Dagna | Guerreiro (protetora) | 32 | 9 | 5 | 3 | 4 | 1 | Terramoto, Juramento*, Juízo |
+| Nyx | Arqueiro (assassina) | 19 | 10 | 2 | 4 | 9 | 1–3 | Passo Sombrio*, Lâmina Envenenada, Golpe nas Costas |
+| Fenna | Mago (druida) | 21 | 9 | 2 | 3 | 5 | 1–3 m | Silvado, Rebento, Chicote de Vinha |
+| Maris | Suporte (maré) | 23 | 7 | 3 | 3 | 6 | 1–2 m | Ressaca, Onda Purificadora, Bolha* |
+
+`*` ação rápida · `m` ataque mágico. Todos têm também **Atacar**, **Defender** e um **supremo**.
+
+### Traços de guilda (sinergias de equipa)
+Calculados a partir da composição; valem para os dois lados (exceto treino e puzzles).
+
+| Traço | Condição | Efeito |
+| --- | --- | --- |
+| Guilda Equilibrada | uma de cada classe | toda a equipa começa com 15 de energia |
+| Linha da Frente | 2+ guerreiros | guerreiros +2 DEF |
+| Saraivada | 2+ arqueiros | arqueiros +2 ATQ |
+| Círculo Arcano | 2+ magos | magos começam com 30 de energia |
+| Coro | 2+ suportes | toda a equipa +4 PV |
+| Sintonia (elemento) | 2+ do mesmo elemento | esses heróis +1 ATQ e +3 PV (3+: +2 ATQ e +6 PV) |
+| Crepúsculo | Luz e Sombra juntas | esses heróis +2 ATQ |
+
+### Maestria (cosmética)
+Cada partida dá XP aos heróis que lutaram: 20 + 20 por vitória + 4 por abate + 10 para o MVP. Níveis aos 60 / 150 / 280 / 450 XP desbloqueiam insígnias (bronze, prata, ouro) e visuais (Veterano no nível 3, Lendário no nível 5). Nunca dá vantagem em combate, alinhado com a monetização pretendida (cosméticos, sem pagar para ganhar).
 
 ## 6. Modos de jogo
 
@@ -169,6 +190,6 @@ Ordem proposta (de trás para a frente: cada camada só entra se a anterior pren
 
 1. **Clareza e profundidade do combate** — zona de ameaça ✅, energia e supremos ✅, elementos ✅, santuários (objetivo de mapa) ✅, tutorial guiado ✅, som e zoom ✅.
 2. **Rejogabilidade** — modo Expedição ✅, desafio diário ✅, draft ✅, puzzles táticos ✅, Salão da Guilda (menu) ✅.
-3. **Coleção e progressão** — elementos, níveis e evolução de classe, vínculos, equipamento, mais heróis.
+3. **Coleção e identidade** — 12 heróis ✅, traços de guilda ✅, maestria com insígnias e visuais ✅, ecrã de Coleção ✅, fortaleza voxel no Salão ✅. A seguir: vínculos entre heróis, evolução de classe, equipamento.
 4. **Fortaleza da guilda** — base com edifícios que dão recursos e melhorias.
 5. **PvP assíncrono e guildas** — defesas, ranking por temporada, guerras de guilda. As regras já são puras e determinísticas, por isso uma partida pode ser reproduzida a partir da lista de comandos.
