@@ -20,6 +20,7 @@ import {
   type Deployment,
 } from '../domain/battle';
 import { autoDeploy } from '../domain/deploy';
+import { puzzleFailed } from '../domain/puzzles';
 import { DEPLOY_ROWS, MAPS, TERRAIN_HINT, TERRAIN_LABEL, buildBoard, isWalkable, posKey, samePos, terrainAt } from '../domain/board';
 import { CLASS_GLYPH, CLASS_LABEL, HEROES, findAbility, getHero, heroAbilities } from '../domain/heroes';
 import type { Ability, Element, BattleEvent, BattleState, Board, Command, HeroClass, Pos, Side, Unit } from '../domain/types';
@@ -118,6 +119,15 @@ const shuffle = <T,>(a: T[]) => {
   return b;
 };
 
+export interface PickerOptions {
+  eyebrow: string;
+  title: string;
+  intro: string;
+  confirmLabel: string;
+  showDifficulty: boolean;
+  onConfirm: (team: string[]) => void;
+}
+
 export class Game {
   private portraits = new Map<string, string>();
   private team: string[] = [];
@@ -125,6 +135,9 @@ export class Game {
   private record = loadRecord();
 
   private selectEl!: HTMLDivElement;
+  private pickerOpts!: PickerOptions;
+  /** Set by main.ts: shows the main menu. */
+  onHub: () => void = () => {};
   private battleEl!: HTMLDivElement;
   private view!: BattleView;
   private el: Record<string, HTMLElement> = {};
@@ -158,13 +171,14 @@ export class Game {
     }
     this.buildBattleDom();
     this.buildSelect();
+    this.selectEl.hidden = true;
     window.addEventListener('keydown', (e) => this.onKey(e));
     const unlock = () => audio.unlock();
     window.addEventListener('pointerdown', unlock);
     window.addEventListener('keydown', unlock);
   }
 
-  private portrait(heroId: string, side: Side = 'player') {
+  portrait(heroId: string, side: Side = 'player') {
     return this.portraits.get(`${heroId}:${side}`) ?? '';
   }
 
@@ -177,7 +191,32 @@ export class Game {
     this.selectEl = el;
     this.app.appendChild(el);
     this.battleEl.hidden = true;
+  }
+
+  /** Opens the team picker for a mode. */
+  openPicker(opts: PickerOptions) {
+    this.pickerOpts = opts;
+    this.phase = 'deploy';
+    this.battleEl.hidden = true;
+    this.hideOtherScreens();
+    this.selectEl.hidden = false;
     this.renderSelect();
+    this.selectEl.scrollTop = 0;
+  }
+
+  openQuickMatch() {
+    this.openPicker({
+      eyebrow: 'Partida rápida',
+      title: 'Monta a tua equipa',
+      intro: 'Escolhe quatro heróis. Equipas com uma classe de cada costumam ser mais estáveis; os elementos decidem quem bate mais forte em quem.',
+      confirmLabel: 'Posicionar ›',
+      showDifficulty: true,
+      onConfirm: () => this.startDeploy(),
+    });
+  }
+
+  get difficultyNoise() {
+    return DIFFICULTY_NOISE[this.difficulty];
   }
 
   private renderSelect() {
@@ -229,33 +268,42 @@ export class Game {
           : `Sem ${missing.map((c) => CLASS_LABEL[c].toLowerCase()).join(' nem ')} — pode resultar, mas é arriscado.`
         : `Escolhe ${4 - this.team.length} herói${4 - this.team.length === 1 ? '' : 's'}.`;
 
+    const o = this.pickerOpts;
     this.selectEl.innerHTML = `
       <div class="select-wrap">
         <div class="title-row">
           <div>
-            <div class="eyebrow">Combate tático por turnos · 4 contra 4</div>
-            <h1 class="logo">Guild <span>Tactics</span></h1>
-            <p class="tagline">Forma uma equipa de quatro heróis, posiciona-a num tabuleiro 6×6 e vence pelo posicionamento, não pela sorte: todo o dano é previsível.</p>
+            <button class="btn ghost back-btn" id="btn-menu">‹ Salão</button>
+            <div class="eyebrow">${esc(o.eyebrow)}</div>
+            <h1 class="page-title">${esc(o.title)}</h1>
+            <p class="tagline">${esc(o.intro)}</p>
           </div>
-          <div class="record">
+          ${
+            o.showDifficulty
+              ? `<div class="record">
             <div><b class="num">${r.wins}</b> vitórias · <b class="num">${r.losses}</b> derrotas</div>
             ${r.streak > 1 ? `<div>Sequência de ${r.streak} vitórias</div>` : ''}
-          </div>
+          </div>`
+              : ''
+          }
         </div>
         <div class="squad-bar">
           ${slots}
           <div class="squad-actions">
-            <button class="btn" id="btn-tutorial">Treino</button>
             <button class="btn" id="btn-random">Aleatória</button>
-            <button class="btn primary" id="btn-next" ${this.team.length === 4 ? '' : 'disabled'}>Posicionar ›</button>
+            <button class="btn primary" id="btn-next" ${this.team.length === 4 ? '' : 'disabled'}>${esc(o.confirmLabel)}</button>
           </div>
           <div class="squad-hint">
             <span>${comp}</span>
-            <span style="margin-left:auto">Adversário:</span>
+            ${
+              o.showDifficulty
+                ? `<span style="margin-left:auto">Adversário:</span>
             <span class="seg" role="group" aria-label="Dificuldade">
               <button id="dif-recruit" aria-pressed="${this.difficulty === 'recruit'}">Recruta</button>
               <button id="dif-veteran" aria-pressed="${this.difficulty === 'veteran'}">Veterano</button>
-            </span>
+            </span>`
+                : ''
+            }
           </div>
         </div>
         <div class="hero-grid">${cards}</div>
@@ -273,13 +321,13 @@ export class Game {
       this.team = (['warrior', 'ranger', 'mage', 'support'] as HeroClass[]).map(byClass);
       this.renderSelect();
     });
-    this.selectEl.querySelector('#btn-next')!.addEventListener('click', () => this.startDeploy());
-    this.selectEl.querySelector('#btn-tutorial')!.addEventListener('click', () => this.startTutorial());
-    this.selectEl.querySelector('#dif-recruit')!.addEventListener('click', () => {
+    this.selectEl.querySelector('#btn-next')!.addEventListener('click', () => o.onConfirm([...this.team]));
+    this.selectEl.querySelector('#btn-menu')!.addEventListener('click', () => this.onHub());
+    this.selectEl.querySelector('#dif-recruit')?.addEventListener('click', () => {
       this.difficulty = 'recruit';
       this.renderSelect();
     });
-    this.selectEl.querySelector('#dif-veteran')!.addEventListener('click', () => {
+    this.selectEl.querySelector('#dif-veteran')?.addEventListener('click', () => {
       this.difficulty = 'veteran';
       this.renderSelect();
     });
@@ -293,7 +341,11 @@ export class Game {
     this.selectEl.scrollTop = scrollY;
   }
 
-  private elementChip(e: Element) {
+  recordSummary() {
+    return { ...this.record };
+  }
+
+  elementChip(e: Element) {
     const m = elementMatchup(e);
     const tip = `Forte contra ${m.strong.map((x) => ELEMENT_LABEL[x]).join(', ')} · fraco contra ${m.weak.map((x) => ELEMENT_LABEL[x]).join(', ')}`;
     return `<span class="chip el" style="color:${ELEMENT_COLOR[e]}" title="${tip}">${ELEMENT_GLYPH[e]} ${ELEMENT_LABEL[e]}</span>`;
@@ -431,8 +483,8 @@ export class Game {
         this.showResult(o, {
           title: o.winner === 'player' ? 'Treino concluído' : 'Quase!',
           sub: o.winner === 'player' ? 'Já sabes o essencial. Monta a tua equipa de quatro.' : 'Tenta outra vez: usa o santuário e cerca os inimigos.',
-          primary: o.winner === 'player' ? { label: 'Montar equipa', fn: () => this.backToSelect() } : { label: 'Repetir treino', fn: () => this.startTutorial() },
-          secondary: o.winner === 'player' ? { label: 'Repetir treino', fn: () => this.startTutorial() } : { label: 'Sair', fn: () => this.backToSelect() },
+          primary: o.winner === 'player' ? { label: 'Partida rápida', fn: () => this.openQuickMatch() } : { label: 'Repetir treino', fn: () => this.startTutorial() },
+          secondary: o.winner === 'player' ? { label: 'Salão da Guilda', fn: () => this.onHub() } : { label: 'Sair', fn: () => this.onHub() },
         });
       },
     });
@@ -462,7 +514,7 @@ export class Game {
   }
 
   /** Hides every non-battle screen (select, hub, mode screens). */
-  private hideOtherScreens() {
+  hideOtherScreens() {
     this.app.querySelectorAll<HTMLElement>(':scope > .screen').forEach((n) => (n.hidden = true));
   }
 
@@ -531,6 +583,11 @@ export class Game {
     this.refreshDeploy();
   }
 
+  hideBattle() {
+    this.phase = 'deploy';
+    this.battleEl.hidden = true;
+  }
+
   private backToSelect() {
     this.phase = 'deploy';
     this.battleEl.hidden = true;
@@ -573,11 +630,9 @@ export class Game {
 
   /** Runs AI turns until it is the player's turn or the battle ends. */
   private async advance() {
+    if (this.spec.winBeforeEnemyActs && puzzleFailed(this.state)) this.state.winner = 'enemy';
     while (this.phase === 'battle' && !this.state.winner && activeUnit(this.state)?.side === 'enemy') {
-      if (this.spec.winBeforeEnemyActs) {
-        this.state.winner = 'enemy';
-        break;
-      }
+      if (this.spec.winBeforeEnemyActs) break;
       await this.runAiTurn();
     }
     if (this.state.winner) return this.finish();
@@ -1115,7 +1170,7 @@ export class Game {
     if (this.spec.kind === 'tutorial') {
       this.phase = 'over';
       this.battleEl.querySelector('.tutorial')?.remove();
-      return this.backToSelect();
+      return this.onHub();
     }
     void this.finish(true);
   }
@@ -1244,7 +1299,8 @@ export class Game {
     const step = steps[this.tutorialStep];
     const el = document.createElement('div');
     el.className = 'tutorial';
-    el.innerHTML = `<div class="eyebrow">Treino · passo ${this.tutorialStep + 1} de ${steps.length}</div>
+    const eyebrow = this.spec.kind === 'puzzle' ? 'Objetivo' : `Treino · passo ${this.tutorialStep + 1} de ${steps.length}`;
+    el.innerHTML = `<div class="eyebrow">${eyebrow}</div>
       <p>${step.text}</p>
       ${step.button ? `<button class="btn primary" id="tut-next">${esc(step.button)}</button>` : ''}`;
     this.battleEl.appendChild(el);
