@@ -58,6 +58,7 @@ const LEGEND: Record<string, Terrain> = {
   H: 'hill',
   R: 'rock',
   W: 'water',
+  S: 'shrine',
 };
 
 export const TERRAIN_LABEL: Record<Terrain, string> = {
@@ -66,6 +67,7 @@ export const TERRAIN_LABEL: Record<Terrain, string> = {
   hill: 'Colina',
   rock: 'Rocha',
   water: 'Água',
+  shrine: 'Santuário',
 };
 
 export const TERRAIN_HINT: Record<Terrain, string> = {
@@ -74,6 +76,7 @@ export const TERRAIN_HINT: Record<Terrain, string> = {
   hill: 'Custa 2 de movimento. Ataques daqui causam +20% e alcance à distância +1.',
   rock: 'Intransponível.',
   water: 'Intransponível.',
+  shrine: 'Quem começa o turno aqui recupera 4 de vida e ganha 15 de energia. Vale a pena disputá-lo.',
 };
 
 export interface MapDef {
@@ -87,17 +90,17 @@ export const MAPS: MapDef[] = [
   {
     id: 'mill',
     name: 'Ribeiro do Moinho',
-    rows: ['..F..H', '.R..F.', 'W..H.W', 'W.H..W', '.F..R.', 'H..F..'],
+    rows: ['..F..H', '.R..F.', 'W.SH.W', 'W.HS.W', '.F..R.', 'H..F..'],
   },
   {
     id: 'ruins',
     name: 'Ruínas da Atalaia',
-    rows: ['...R..', 'F.H..F', '.R..F.', '.F..R.', 'F..H.F', '..R...'],
+    rows: ['...R..', 'F.H..F', '.RS.F.', '.F.SR.', 'F..H.F', '..R...'],
   },
   {
     id: 'ford',
     name: 'Vau dos Salgueiros',
-    rows: ['.F....', '...H.R', 'WW..F.', '.F..WW', 'R.H...', '....F.'],
+    rows: ['.F....', '...H.R', 'WW.SF.', '.FS.WW', 'R.H...', '....F.'],
   },
 ];
 

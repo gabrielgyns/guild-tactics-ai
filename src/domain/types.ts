@@ -7,7 +7,9 @@ export interface Pos {
   y: number;
 }
 
-export type Terrain = 'plain' | 'forest' | 'hill' | 'rock' | 'water';
+export type Terrain = 'plain' | 'forest' | 'hill' | 'rock' | 'water' | 'shrine';
+
+export type Element = 'fire' | 'water' | 'nature' | 'light' | 'shadow';
 
 export type HeroClass = 'warrior' | 'ranger' | 'mage' | 'support';
 
@@ -93,6 +95,7 @@ export interface HeroDef {
   name: string;
   title: string;
   heroClass: HeroClass;
+  element: Element;
   stats: Stats;
   attack: { min: number; max: number; magic: boolean };
   abilities: [Ability, Ability, Ability];
@@ -114,6 +117,9 @@ export interface Unit {
   id: string;
   heroId: string;
   side: Side;
+  /** Effective stats for this battle (hero base + bonuses). */
+  stats: Stats;
+  element: Element;
   pos: Pos;
   hp: number;
   shield: number;
@@ -161,7 +167,18 @@ export type Command =
   | { type: 'ability'; abilityId: string; target: Pos }
   | { type: 'endTurn' };
 
-export type DamageTag = 'cover' | 'height' | 'flank' | 'mark' | 'guard' | 'weak' | 'execute' | 'collision' | 'burn';
+export type DamageTag =
+  | 'cover'
+  | 'height'
+  | 'flank'
+  | 'mark'
+  | 'guard'
+  | 'weak'
+  | 'execute'
+  | 'collision'
+  | 'burn'
+  | 'advantage'
+  | 'resisted';
 
 export type BattleEvent =
   | { type: 'roundStart'; round: number }
@@ -178,6 +195,7 @@ export type BattleEvent =
   | { type: 'cleanse'; unitId: string }
   | { type: 'reposition'; unitId: string; from: Pos; to: Pos; mode: 'push' | 'dash' | 'teleport' | 'swap' }
   | { type: 'extraTurn'; unitId: string }
+  | { type: 'shrine'; unitId: string; heal: number; energy: number }
   | { type: 'death'; unitId: string }
   | { type: 'turnEnd'; unitId: string }
   | { type: 'victory'; winner: Side | 'draw'; reason: 'elimination' | 'timeout' };
