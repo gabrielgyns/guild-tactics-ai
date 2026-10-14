@@ -35,6 +35,8 @@ export interface ExpeditionRecord {
   runs: number;
   wins: number;
   bestStage: number;
+  /** Runs that reached an end (won, lost or abandoned). */
+  finished?: number;
 }
 
 export interface DailyRecord {

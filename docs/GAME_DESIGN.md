@@ -183,10 +183,10 @@ Ouro ganho em todos os modos (vitória 40, derrota 15, etapa de Expedição 30, 
 Os edifícios só ajudam PvE e progressão; nunca alteram números da Arena. A maquete voxel da fortaleza mostra cada edifício construído e o estandarte da guilda.
 
 ### Primeiras partidas (feedback do primeiro jogador: "só perco", "coisa demais")
-- **Desbloqueio progressivo:** um jogador novo vê só o Treino e a Partida rápida. 1 vitória abre a Expedição e o desafio diário (o Treino abre os Puzzles); 2 vitórias a Coleção; 3 o Draft e a Fortaleza; 5 vitórias (ou uma Expedição conquistada) a Arena. Uma linha "Por desbloquear" diz o que falta, e "Mostrar tudo já" abre tudo para quem quiser.
+- **Desbloqueio progressivo** (ordem combinada com o jogador): no início só o Treino e a Partida rápida → a primeira vitória abre a Expedição → uma Expedição concluída (ganha ou perdida) abre a Fortaleza, a Coleção e o desafio diário → 2 Expedições concluídas (ou uma conquistada) abrem a Arena e o Draft. Os Puzzles abrem ao concluir o Treino. Uma linha "Por desbloquear" diz o que falta, e "Mostrar tudo já" abre tudo para quem quiser.
 - **Recruta mais fácil:** adversários com −2 ATQ e −5 PV e uma IA muito mais desajeitada. Um jogador simulado mediano passa de ~55% para ~96% de vitórias (`scripts/recruit-check.ts`); o Veterano não mudou.
 - **Sugestão (tecla S):** mostra no tabuleiro o que a IA faria com o herói ativo, sem jogar por ti.
-- **Porque perdi?:** no fim de cada partida, até 3 observações concretas tiradas do histórico do combate (herói perdido cedo, supremo por usar, ataques contra elementos que resistem, pouco cerco, turnos sem agir, santuários). Código: `src/domain/analysis.ts`.
+- **Porque perdi?:** no fim de cada partida, até 3 observações concretas tiradas do histórico do combate (herói deixado ao alcance de vários inimigos, herói perdido cedo, supremo por usar, ataques contra elementos que resistem, pouco cerco, turnos sem agir, santuários). Código: `src/domain/analysis.ts`.
 
 ## 7. Primeira leitura de equilíbrio
 

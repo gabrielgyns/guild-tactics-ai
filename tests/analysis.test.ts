@@ -39,3 +39,17 @@ describe('post-match analysis', () => {
     expect(analyzeMatch(s, [], []).length).toBe(1);
   });
 });
+
+describe('exposure insight', () => {
+  it('names the hero left within reach of several enemies, ranked first when it then fell', () => {
+    const s = createBattle(
+      { width: 6, height: 6, name: 't', tiles: Array.from({ length: 6 }, () => Array<Terrain>(6).fill('plain')) },
+      [{ heroId: 'lyra', pos: { x: 0, y: 5 } }],
+      [{ heroId: 'vex', pos: { x: 3, y: 0 } }],
+    ).state;
+    s.winner = 'enemy';
+    const ev: BattleEvent[] = [{ type: 'roundStart', round: 2 }, { type: 'death', unitId: 'p0-lyra' }];
+    const tips = analyzeMatch(s, ev, [], [{ unitId: 'p0-lyra', round: 2, count: 3 }]);
+    expect(tips[0].text).toMatch(/Lyra ficou ao alcance de 3 inimigos na ronda 2 e acabou por cair/);
+  });
+});

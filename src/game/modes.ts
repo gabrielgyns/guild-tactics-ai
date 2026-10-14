@@ -153,19 +153,22 @@ export class Modes {
     const wins = Math.max(progress.wins, r.wins);
     const showAll = loadRaw<boolean>('unlock-all') === true;
     const seen = new Set(loadRaw<string[]>('seen-modes') ?? []);
+    // The order agreed with the first player: Training + Quick match → first win opens the
+    // Expedition → a finished Expedition opens the Fortress and Collection → then the Arena.
+    const finished = expRec.finished ?? (exp && exp.status !== 'active' ? 1 : 0);
     const UNLOCK: Record<string, { ok: boolean; need: string }> = {
       quick: { ok: true, need: '' },
       tutorial: { ok: true, need: '' },
-      puzzles: { ok: tutorialDone || wins >= 1, need: 'conclui o Treino' },
-      expedition: { ok: wins >= 1, need: 'vence 1 partida' },
-      daily: { ok: wins >= 1, need: 'vence 1 partida' },
-      collection: { ok: wins >= 2, need: 'vence 2 partidas' },
-      draft: { ok: wins >= 3, need: 'vence 3 partidas' },
-      fortress: { ok: wins >= 3 || expRec.bestStage >= 2, need: 'vence 3 partidas' },
-      arena: { ok: wins >= 5 || expRec.wins >= 1, need: 'vence 5 partidas ou conquista uma Expedição' },
+      puzzles: { ok: tutorialDone, need: 'conclui o Treino' },
+      expedition: { ok: wins >= 1, need: 'vence a tua primeira partida' },
+      collection: { ok: finished >= 1, need: 'conclui uma Expedição' },
+      fortress: { ok: finished >= 1, need: 'conclui uma Expedição' },
+      daily: { ok: finished >= 1, need: 'conclui uma Expedição' },
+      arena: { ok: finished >= 2 || expRec.wins >= 1, need: 'conclui 2 Expedições ou conquista uma' },
+      draft: { ok: finished >= 2 || expRec.wins >= 1, need: 'conclui 2 Expedições ou conquista uma' },
     };
     const open = (id: string) => showAll || UNLOCK[id]?.ok !== false;
-    const LABEL: Record<string, string> = { expedition: 'Expedição', daily: 'Desafio diário', puzzles: 'Puzzles', collection: 'Coleção', draft: 'Draft', fortress: 'Fortaleza', arena: 'Arena das Guildas' };
+    const LABEL: Record<string, string> = { puzzles: 'Puzzles', expedition: 'Expedição', fortress: 'Fortaleza', collection: 'Coleção', daily: 'Desafio diário', arena: 'Arena das Guildas', draft: 'Draft' };
     const locked = Object.keys(LABEL).filter((id) => !open(id));
     const card = (id: string, eyebrow: string, title: string, body: string, status: string, cta: string, accent = false) => {
       if (!open(id)) return '';
@@ -398,6 +401,7 @@ export class Modes {
     save('expedition-record', {
       ...rec,
       wins: rec.wins + (e.status === 'won' ? 1 : 0),
+      finished: (rec.finished ?? 0) + 1,
       bestStage: Math.max(rec.bestStage, e.status === 'won' ? EXPEDITION_STAGES : e.stage + 1),
     });
   }

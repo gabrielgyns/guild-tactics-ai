@@ -15,7 +15,13 @@ const name = (s: BattleState, id: string) => getHero(s.units.find((u) => u.id ==
 /**
  * @param ultReady ids of player units whose energy bar was full at some point
  */
-export function analyzeMatch(s: BattleState, events: BattleEvent[], ultReady: string[] = []): Insight[] {
+export function analyzeMatch(
+  s: BattleState,
+  events: BattleEvent[],
+  ultReady: string[] = [],
+  /** Moments a player hero ended its turn within reach of several enemies. */
+  exposures: { unitId: string; round: number; count: number }[] = [],
+): Insight[] {
   const out: Insight[] = [];
   const unit = (id: string): Unit | undefined => s.units.find((u) => u.id === id);
   const isPlayer = (id: string) => unit(id)?.side === 'player';
@@ -73,6 +79,23 @@ export function analyzeMatch(s: BattleState, events: BattleEvent[], ultReady: st
         else shrineTheirs++;
         break;
     }
+  }
+
+  // Heroes left within reach of several enemies (the worst moment per hero).
+  const worst = new Map<string, { round: number; count: number }>();
+  for (const e of exposures) {
+    const cur = worst.get(e.unitId);
+    if (!cur || e.count > cur.count) worst.set(e.unitId, e);
+  }
+  const exposedDeaths = new Set(events.filter((e) => e.type === 'death').map((e) => (e as { unitId: string }).unitId));
+  const exposed = [...worst.entries()].sort((a, b) => b[1].count - a[1].count)[0];
+  if (exposed) {
+    const [id, e] = exposed;
+    const died = exposedDeaths.has(id);
+    out.push({
+      weight: died ? 10 : 6,
+      text: `${name(s, id)} ficou ao alcance de ${e.count} inimigos na ronda ${e.round}${died ? ' e acabou por cair' : ''}. Antes de terminar o turno, carrega em T: se a casa estiver vermelha, recua ou fica ao lado de um guerreiro.`,
+    });
   }
 
   // First hero lost, and why that usually happens for its class.
