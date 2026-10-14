@@ -1461,3 +1461,6 @@ table.stats-table {
 .inventory { margin-bottom: 12px; }
 .inventory li { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .inventory .btn { padding: 3px 8px; font-size: 12px; }
+.war-score { display: flex; align-items: baseline; gap: 12px; font-family: var(--font-display); font-size: 34px; }
+.war-score .muted { font-family: var(--font-cond); font-size: 13px; }
+.panel > .btn { justify-self: start; }
