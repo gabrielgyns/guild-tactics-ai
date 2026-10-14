@@ -10,6 +10,7 @@ import {
   stepToward,
   terrainAt,
 } from './board';
+import { elementMultiplier } from './elements';
 import { findAbility, getHero, heroAbilities } from './heroes';
 import type {
   Ability,
@@ -21,6 +22,7 @@ import type {
   Effect,
   Pos,
   Side,
+  Stats,
   StatusKind,
   Unit,
 } from './types';
@@ -34,6 +36,8 @@ export const RULES = {
   flankBonusPerAlly: 0.15,
   guardFactor: 0.5,
   collisionDamage: 3,
+  shrineHeal: 4,
+  shrineEnergy: 15,
   /** Damage multiplier = DEF_SCALE / (DEF_SCALE + def). */
   defScale: 10,
   /** Energy: gained at turn start, per point of damage dealt and taken. */
@@ -52,20 +56,41 @@ const NEGATIVE: StatusKind[] = ['stun', 'root', 'burn', 'mark', 'weak'];
 export interface Deployment {
   heroId: string;
   pos: Pos;
+  /** Flat stat bonuses (expedition upgrades, relics, team traits). */
+  bonus?: Partial<Stats>;
+  /** Starting HP (defaults to max). Used by expeditions where damage carries over. */
+  hp?: number;
+  energy?: number;
+  shield?: number;
+}
+
+export function deployedStats(d: Deployment): Stats {
+  const base = getHero(d.heroId).stats;
+  const b = d.bonus ?? {};
+  return {
+    maxHp: base.maxHp + (b.maxHp ?? 0),
+    atk: base.atk + (b.atk ?? 0),
+    def: base.def + (b.def ?? 0),
+    mov: base.mov + (b.mov ?? 0),
+    spd: base.spd + (b.spd ?? 0),
+  };
 }
 
 export function createBattle(board: Board, player: Deployment[], enemy: Deployment[]) {
   const units: Unit[] = [];
   const add = (side: Side, d: Deployment, i: number) => {
     const hero = getHero(d.heroId);
+    const stats = deployedStats(d);
     units.push({
       id: `${side === 'player' ? 'p' : 'e'}${i}-${d.heroId}`,
       heroId: d.heroId,
       side,
+      stats,
+      element: hero.element,
       pos: { ...d.pos },
-      hp: hero.stats.maxHp,
-      shield: 0,
-      energy: 0,
+      hp: Math.max(1, Math.min(stats.maxHp, d.hp ?? stats.maxHp)),
+      shield: d.shield ?? 0,
+      energy: Math.min(RULES.energyMax, d.energy ?? 0),
       alive: true,
       statuses: [],
       cooldowns: {},
@@ -127,11 +152,11 @@ function statusAmount(u: Unit, kind: StatusKind): number {
 }
 
 export function maxHp(u: Unit): number {
-  return getHero(u.heroId).stats.maxHp;
+  return u.stats.maxHp;
 }
 
 export function effectiveAtk(u: Unit): number {
-  return getHero(u.heroId).stats.atk + statusAmount(u, 'empower');
+  return u.stats.atk + statusAmount(u, 'empower');
 }
 
 export function aliveUnits(s: BattleState, side?: Side): Unit[] {
@@ -143,8 +168,8 @@ export function roundOrder(s: BattleState): string[] {
   return aliveUnits(s)
     .slice()
     .sort((a, b) => {
-      const sa = getHero(a.heroId).stats.spd;
-      const sb = getHero(b.heroId).stats.spd;
+      const sa = a.stats.spd;
+      const sb = b.stats.spd;
       if (sa !== sb) return sb - sa;
       // Speed ties alternate between sides every round so neither always moves first.
       if (a.side !== b.side) return (a.side === 'player') === (s.round % 2 === 1) ? -1 : 1;
@@ -162,7 +187,7 @@ export interface Reach {
 /** Tiles the unit can end its move on (Dijkstra; can pass through allies, not enemies). */
 export function reachableTiles(s: BattleState, unitId: string): Map<string, Reach> {
   const unit = getUnit(s, unitId);
-  const budget = getHero(unit.heroId).stats.mov;
+  const budget = unit.stats.mov;
   const best = new Map<string, Reach>();
   const frontier: Reach[] = [{ pos: unit.pos, cost: 0, path: [] }];
   const seen = new Map<string, number>([[posKey(unit.pos), 0]]);
@@ -340,8 +365,14 @@ export function computeDamage(
   effect: Extract<Effect, { kind: 'damage' }>,
 ): DamageQuote {
   const tags: DamageTag[] = [];
-  const def = getHero(target.heroId).stats.def * (effect.magic ? 0.5 : 1);
+  const def = Math.max(0, target.stats.def) * (effect.magic ? 0.5 : 1);
   let dmg = effectiveAtk(attacker) * effect.power * RULES.damageScale * (RULES.defScale / (RULES.defScale + def));
+
+  const elem = elementMultiplier(attacker.element, target.element);
+  if (elem !== 1) {
+    dmg *= elem;
+    tags.push(elem > 1 ? 'advantage' : 'resisted');
+  }
 
   if (effect.executeBelow && target.hp <= maxHp(target) * effect.executeBelow) {
     dmg *= 2;
@@ -569,6 +600,12 @@ function startNextTurn(s: BattleState, events: BattleEvent[]) {
     events.push({ type: 'turnStart', unitId: unit.id });
     for (const k of Object.keys(unit.cooldowns)) unit.cooldowns[k] = Math.max(0, unit.cooldowns[k] - 1);
     gainEnergy(unit, RULES.energyPerTurn);
+    if (terrainAt(s.board, unit.pos) === 'shrine') {
+      const heal = Math.min(RULES.shrineHeal, maxHp(unit) - unit.hp);
+      unit.hp += heal;
+      gainEnergy(unit, RULES.shrineEnergy);
+      events.push({ type: 'shrine', unitId: unit.id, heal, energy: RULES.shrineEnergy });
+    }
     s.active = { unitId: unit.id, preMovePos: { ...unit.pos }, canUndo: false, moved: false, acted: false, usedQuick: false, canMove: true };
 
     const burn = unit.statuses.find((st) => st.kind === 'burn');

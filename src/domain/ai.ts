@@ -71,7 +71,7 @@ function positionalScore(s: BattleState, u: Unit): number {
   let threat = 0;
   for (const e of enemies) {
     const hero = getHero(e.heroId);
-    const reach = hero.stats.mov + abilityRange(s, e, basicAttack(hero)).max;
+    const reach = e.stats.mov + abilityRange(s, e, basicAttack(hero)).max;
     if (manhattan(e.pos, u.pos) <= reach && !hasStatus(e, 'stun')) {
       threat += computeDamage(s, e, u, { kind: 'damage', power: 1, magic: hero.attack.magic }).amount;
     }
@@ -92,6 +92,7 @@ function positionalScore(s: BattleState, u: Unit): number {
 
   const t = terrainAt(s.board, u.pos);
   if (t === 'forest') score += 1.5;
+  if (t === 'shrine') score += 2.5;
   if (t === 'hill') score += getHero(u.heroId).attack.max > 1 ? 2 : 0.8;
   return score;
 }

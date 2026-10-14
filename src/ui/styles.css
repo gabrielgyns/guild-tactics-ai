@@ -112,6 +112,7 @@ button:focus-visible,
 .chip.ranger { color: #a8d98a; }
 .chip.mage { color: #9fc8ff; }
 .chip.support { color: #f2d98a; }
+.chip.el { text-transform: none; letter-spacing: 0.02em; }
 .eyebrow {
   font-family: var(--font-cond);
   font-weight: 600;
@@ -469,6 +470,8 @@ kbd {
   to { opacity: 1; }
 }
 .unit-tag.low .hpbar { border-color: #6a1410; }
+.hprow { display: flex; align-items: center; gap: 2px; margin-left: -9px; }
+.el-dot { width: 7px; height: 7px; border-radius: 1px; border: 1px solid #000; flex: none; }
 .enbar {
   width: 46px;
   height: 3px;
@@ -1045,6 +1048,25 @@ table.stats-table {
   line-height: 1.45;
 }
 
+.tutorial {
+  position: absolute;
+  z-index: 6;
+  left: 50%;
+  top: 82px;
+  transform: translateX(-50%);
+  width: min(460px, calc(100% - 32px));
+  background: var(--panel-solid);
+  border: 1px solid var(--brass);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  display: grid;
+  gap: 8px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  animation: logIn 0.25s ease-out;
+}
+.tutorial p { margin: 0; font-size: 14.5px; line-height: 1.45; }
+.tutorial .btn { justify-self: end; padding: 7px 14px; font-size: 14px; }
+
 .toast {
   position: absolute;
   left: 50%;
@@ -1067,6 +1089,9 @@ table.stats-table {
   .squad-actions .btn { flex: 1; }
   .hud-top { grid-template-columns: minmax(0, 1fr) auto; }
   .round-box { display: none; }
+  .top-btns { display: grid; grid-template-columns: repeat(5, 32px); gap: 4px; }
+  .icon-btn { width: 32px; height: 32px; font-size: 14px; }
+  .tutorial { top: 120px; }
   .order { justify-content: flex-start; }
   .card { width: min(200px, 46vw); padding: 7px; font-size: 12px; }
   .card .bar-label { font-size: 12px; }

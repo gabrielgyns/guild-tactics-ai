@@ -19,14 +19,54 @@ import {
   validTargets,
   type Deployment,
 } from '../domain/battle';
+import { autoDeploy } from '../domain/deploy';
 import { DEPLOY_ROWS, MAPS, TERRAIN_HINT, TERRAIN_LABEL, buildBoard, isWalkable, posKey, samePos, terrainAt } from '../domain/board';
 import { CLASS_GLYPH, CLASS_LABEL, HEROES, findAbility, getHero, heroAbilities } from '../domain/heroes';
-import type { Ability, BattleEvent, BattleState, Board, Command, HeroClass, Pos, Side, Unit } from '../domain/types';
+import type { Ability, Element, BattleEvent, BattleState, Board, Command, HeroClass, Pos, Side, Unit } from '../domain/types';
 import type { MapDef } from '../domain/board';
+import { ELEMENT_COLOR, ELEMENT_GLYPH, ELEMENT_LABEL, elementMatchup } from '../domain/elements';
 import { STATUS_GLYPH, STATUS_LABEL, BattleView, type HighlightKind } from '../render/view';
 import { renderPortraits } from '../render/models';
+import { audio, type Sfx } from '../ui/audio';
+import { TUTORIAL_ENEMY, TUTORIAL_MAP, TUTORIAL_PLAYER, TUTORIAL_STEPS } from './tutorial';
 
 type Difficulty = 'recruit' | 'veteran';
+
+export interface MatchOutcome {
+  winner: Side | 'draw' | null;
+  surrendered: boolean;
+  state: BattleState;
+  seconds: number;
+}
+
+export interface TutorialStep {
+  text: string;
+  /** Advances when this returns true after an event (or a UI action such as toggling the threat zone). */
+  until?: (ctx: { event?: BattleEvent; state: BattleState; threatOn: boolean }) => boolean;
+  /** Advances on a button press instead. */
+  button?: string;
+}
+
+/** Everything the battle screen needs to run one match, whatever the mode. */
+export interface MatchSpec {
+  kind: 'quick' | 'tutorial' | 'expedition' | 'daily' | 'puzzle';
+  label: string;
+  map: MapDef;
+  player: Deployment[];
+  enemy: Deployment[];
+  noise: number;
+  deploy: boolean;
+  rerollMap?: () => MatchSpec;
+  backLabel?: string;
+  onBack?: () => void;
+  tutorial?: TutorialStep[];
+  /** Puzzle rule: the player loses as soon as an enemy would act. */
+  winBeforeEnemyActs?: boolean;
+  /** Custom result handling; the default result modal is used when absent. */
+  onFinish?: (o: MatchOutcome) => void;
+  onRematch?: () => void;
+  countsForRecord?: boolean;
+}
 type Mode = { kind: 'idle' } | { kind: 'target'; abilityId: string };
 
 const DIFFICULTY_NOISE: Record<Difficulty, number> = { recruit: 9, veteran: 0.8 };
@@ -91,9 +131,10 @@ export class Game {
 
   // battle
   private phase: 'deploy' | 'battle' | 'over' = 'deploy';
+  private spec!: MatchSpec;
   private map!: MapDef;
   private board!: Board;
-  private enemyTeam: string[] = [];
+  private tutorialStep = 0;
   private playerDeploy: Deployment[] = [];
   private enemyDeploy: Deployment[] = [];
   private deploySelected: number | null = null;
@@ -118,6 +159,9 @@ export class Game {
     this.buildBattleDom();
     this.buildSelect();
     window.addEventListener('keydown', (e) => this.onKey(e));
+    const unlock = () => audio.unlock();
+    window.addEventListener('pointerdown', unlock);
+    window.addEventListener('keydown', unlock);
   }
 
   private portrait(heroId: string, side: Side = 'player') {
@@ -165,6 +209,7 @@ export class Game {
         <img class="portrait" alt="" src="${this.portrait(h.id)}" />
         <div>
           <span class="chip ${h.heroClass}">${CLASS_GLYPH[h.heroClass]} ${CLASS_LABEL[h.heroClass]}</span>
+          ${this.elementChip(h.element)}
           <h3>${esc(h.name)}</h3>
           <div class="htitle">${esc(h.title)} · alcance ${h.attack.min}–${h.attack.max}${h.attack.magic ? ' mágico' : ''}</div>
           <div class="stats num">
@@ -200,6 +245,7 @@ export class Game {
         <div class="squad-bar">
           ${slots}
           <div class="squad-actions">
+            <button class="btn" id="btn-tutorial">Treino</button>
             <button class="btn" id="btn-random">Aleatória</button>
             <button class="btn primary" id="btn-next" ${this.team.length === 4 ? '' : 'disabled'}>Posicionar ›</button>
           </div>
@@ -228,6 +274,7 @@ export class Game {
       this.renderSelect();
     });
     this.selectEl.querySelector('#btn-next')!.addEventListener('click', () => this.startDeploy());
+    this.selectEl.querySelector('#btn-tutorial')!.addEventListener('click', () => this.startTutorial());
     this.selectEl.querySelector('#dif-recruit')!.addEventListener('click', () => {
       this.difficulty = 'recruit';
       this.renderSelect();
@@ -246,6 +293,12 @@ export class Game {
     this.selectEl.scrollTop = scrollY;
   }
 
+  private elementChip(e: Element) {
+    const m = elementMatchup(e);
+    const tip = `Forte contra ${m.strong.map((x) => ELEMENT_LABEL[x]).join(', ')} · fraco contra ${m.weak.map((x) => ELEMENT_LABEL[x]).join(', ')}`;
+    return `<span class="chip el" style="color:${ELEMENT_COLOR[e]}" title="${tip}">${ELEMENT_GLYPH[e]} ${ELEMENT_LABEL[e]}</span>`;
+  }
+
   private howToHtml(open: boolean) {
     return `<details class="howto" ${open ? 'open' : ''}>
       <summary>Como jogar</summary>
@@ -253,6 +306,8 @@ export class Game {
         <div><h4>O turno</h4><p>Cada herói joga quando chega a sua vez (ordem no topo, por velocidade). No teu turno podes <b>mover</b> e depois fazer <b>uma ação</b>: atacar, usar uma habilidade ou defender. A ação termina o turno. Ações <em>rápidas</em> não terminam.</p></div>
         <div><h4>Vencer</h4><p>Derrota os quatro heróis inimigos. Ao fim de 12 rondas vence quem tiver mais vida (em %).</p></div>
         <div><h4>Terreno</h4><ul><li><b>Floresta</b>: −25% de dano recebido, custa 2 de movimento.</li><li><b>Colina</b>: +20% de dano e +1 de alcance à distância, custa 2.</li><li><b>Rocha</b> e <b>água</b>: intransponíveis.</li></ul></div>
+        <div><h4>Elementos</h4><p>🔥 Fogo vence 🌿 Natureza, que vence 💧 Água, que vence Fogo. ☀ Luz e ☾ Sombra vencem-se uma à outra. Vantagem: +30% de dano; desvantagem: −20%. A cor ao lado da barra de vida mostra o elemento.</p></div>
+        <div><h4>Santuários</h4><p>As casas de pedra com cristais roxos curam 4 e dão 15 de energia a quem lá começa o turno. Disputa-os.</p></div>
         <div><h4>Energia e supremo</h4><p>Cada herói ganha energia no início do turno e ao causar ou sofrer dano. Com a barra dourada cheia, desbloqueia o seu <b>golpe supremo</b>, que gasta a barra toda.</p></div>
         <div><h4>Zona de ameaça</h4><p>Carrega em <kbd>T</kbd> (ou no botão ⚠) para ver as casas que os inimigos conseguem atingir no próximo turno. Passar o rato sobre um inimigo mostra só o alcance dele. Casas de movimento a roxo estão em perigo.</p></div>
         <div><h4>Sinergias</h4><ul><li><b>Cerco</b>: +15% de dano por cada aliado teu encostado ao alvo.</li><li>Recargas (número sobre o botão) obrigam a gerir habilidades.</li><li>Passa o rato sobre um alvo para ver o dano exato antes de agir.</li></ul></div>
@@ -277,7 +332,10 @@ export class Game {
             <button class="icon-btn" data-ref="threat" title="Zona de ameaça inimiga (T)" aria-label="Mostrar zona de ameaça inimiga" aria-pressed="false">⚠</button>
             <button class="icon-btn" data-ref="rotl" title="Rodar câmara (Q)" aria-label="Rodar câmara para a esquerda">⟲</button>
             <button class="icon-btn" data-ref="rotr" title="Rodar câmara (E)" aria-label="Rodar câmara para a direita">⟳</button>
+            <button class="icon-btn" data-ref="zoomin" title="Aproximar (roda do rato)" aria-label="Aproximar">+</button>
+            <button class="icon-btn" data-ref="zoomout" title="Afastar (roda do rato)" aria-label="Afastar">−</button>
             <button class="icon-btn" data-ref="speed" title="Velocidade das animações">1×</button>
+            <button class="icon-btn" data-ref="mute" title="Som" aria-label="Ligar ou desligar o som">${audio.muted ? '🔇' : '🔊'}</button>
             <button class="icon-btn" data-ref="help" title="Como jogar" aria-label="Como jogar">?</button>
             <button class="icon-btn" data-ref="quit" title="Desistir" aria-label="Desistir">✕</button>
           </div>
@@ -310,57 +368,102 @@ export class Game {
       this.el.speed.textContent = `${this.view.speed}×`;
     });
     this.el.help.addEventListener('click', () => this.showHelp());
+    this.el.zoomin.addEventListener('click', () => this.view.zoomBy(1.25));
+    this.el.zoomout.addEventListener('click', () => this.view.zoomBy(0.8));
+    this.el.mute.addEventListener('click', () => {
+      this.el.mute.textContent = audio.toggle() ? '🔇' : '🔊';
+    });
     this.el.quit.addEventListener('click', () => this.quit());
   }
 
   // =============================================================== deployment
 
-  private startDeploy(keepMap = false) {
-    if (!keepMap) this.map = MAPS[Math.floor(Math.random() * MAPS.length)];
-    this.board = buildBoard(this.map);
+  /** Builds a quick-match spec: random map, one enemy hero per class. */
+  private quickMatchSpec(map?: MapDef, enemyTeam?: string[]): MatchSpec {
+    const m = map ?? MAPS[Math.floor(Math.random() * MAPS.length)];
+    const board = buildBoard(m);
     // One hero per class, preferring heroes the player did not pick so names stay unambiguous.
     const pickClass = (c: HeroClass) => {
       const pool = shuffle(HEROES.filter((h) => h.heroClass === c));
       return (pool.find((h) => !this.team.includes(h.id)) ?? pool[0]).id;
     };
-    if (!keepMap) this.enemyTeam = shuffle((['warrior', 'ranger', 'mage', 'support'] as HeroClass[]).map(pickClass));
-    this.playerDeploy = this.autoDeploy(this.team, 'player');
-    this.enemyDeploy = this.autoDeploy(this.enemyTeam, 'enemy');
+    const enemies = enemyTeam ?? shuffle((['warrior', 'ranger', 'mage', 'support'] as HeroClass[]).map(pickClass));
+    const spec: MatchSpec = {
+      kind: 'quick',
+      label: `Partida rápida · ${this.difficulty === 'recruit' ? 'Recruta' : 'Veterano'}`,
+      map: m,
+      player: autoDeploy(board, this.team.map((heroId) => ({ heroId })), 'player'),
+      enemy: autoDeploy(board, enemies.map((heroId) => ({ heroId })), 'enemy'),
+      noise: DIFFICULTY_NOISE[this.difficulty],
+      deploy: true,
+      backLabel: '‹ Equipa',
+      onBack: () => this.backToSelect(),
+      onRematch: () => this.launch(this.quickMatchSpec()),
+      countsForRecord: true,
+    };
+    spec.rerollMap = () => {
+      const others = MAPS.filter((x) => x.id !== m.id);
+      return this.quickMatchSpec(others[Math.floor(Math.random() * others.length)], enemies);
+    };
+    return spec;
+  }
+
+  private startDeploy() {
+    this.launch(this.quickMatchSpec());
+  }
+
+  startTutorial() {
+    this.launch({
+      kind: 'tutorial',
+      label: 'Treino',
+      map: TUTORIAL_MAP,
+      player: TUTORIAL_PLAYER,
+      enemy: TUTORIAL_ENEMY,
+      noise: 12,
+      deploy: false,
+      tutorial: TUTORIAL_STEPS,
+      onFinish: (o) => {
+        try {
+          if (o.winner === 'player') localStorage.setItem('guild-tactics.tutorial', 'done');
+        } catch {
+          /* storage unavailable */
+        }
+        this.showResult(o, {
+          title: o.winner === 'player' ? 'Treino concluído' : 'Quase!',
+          sub: o.winner === 'player' ? 'Já sabes o essencial. Monta a tua equipa de quatro.' : 'Tenta outra vez: usa o santuário e cerca os inimigos.',
+          primary: o.winner === 'player' ? { label: 'Montar equipa', fn: () => this.backToSelect() } : { label: 'Repetir treino', fn: () => this.startTutorial() },
+          secondary: o.winner === 'player' ? { label: 'Repetir treino', fn: () => this.startTutorial() } : { label: 'Sair', fn: () => this.backToSelect() },
+        });
+      },
+    });
+  }
+
+  /** Entry point for every mode. */
+  launch(spec: MatchSpec) {
+    this.spec = spec;
+    this.map = spec.map;
+    this.board = buildBoard(spec.map);
+    this.playerDeploy = spec.player.map((d) => ({ ...d, pos: { ...d.pos } }));
+    this.enemyDeploy = spec.enemy.map((d) => ({ ...d, pos: { ...d.pos } }));
+    this.tutorialStep = 0;
     this.deploySelected = null;
+    this.battleEl.querySelectorAll('.modal-back, .tutorial').forEach((n) => n.remove());
     this.phase = 'deploy';
     this.logLines = [];
     this.el.log.innerHTML = '';
     this.mode = { kind: 'idle' };
 
-    this.selectEl.hidden = true;
+    this.hideOtherScreens();
     this.battleEl.hidden = false;
     this.view.loadBoard(this.board);
     this.view.setActive(null);
-    this.refreshDeploy();
+    if (spec.deploy) this.refreshDeploy();
+    else void this.startBattle();
   }
 
-  /** Front-liners forward, everyone else in the back row, spread across the width. */
-  private autoDeploy(team: string[], side: Side): Deployment[] {
-    const [a, b] = DEPLOY_ROWS[side];
-    const front = side === 'player' ? Math.min(a, b) : Math.max(a, b);
-    const back = side === 'player' ? Math.max(a, b) : Math.min(a, b);
-    const taken = new Set<string>();
-    const order = [2, 3, 1, 4, 0, 5];
-    const spot = (row: number, other: number): Pos => {
-      for (const r of [row, other])
-        for (const x of order) {
-          const p = { x, y: r };
-          if (isWalkable(this.board, p) && !taken.has(posKey(p))) {
-            taken.add(posKey(p));
-            return p;
-          }
-        }
-      throw new Error('No deploy spot');
-    };
-    return team.map((heroId) => {
-      const isFront = getHero(heroId).heroClass === 'warrior';
-      return { heroId, pos: spot(isFront ? front : back, isFront ? back : front) };
-    });
+  /** Hides every non-battle screen (select, hub, mode screens). */
+  private hideOtherScreens() {
+    this.app.querySelectorAll<HTMLElement>(':scope > .screen').forEach((n) => (n.hidden = true));
   }
 
   private deployState(): BattleState {
@@ -388,29 +491,25 @@ export class Game {
       this.deploySelected === null
         ? 'Clica num dos teus heróis e depois numa casa azul para o reposicionar.'
         : `A mover <em>${esc(getHero(this.playerDeploy[this.deploySelected].heroId).name)}</em>: escolhe uma casa azul.`;
-    const foes = this.enemyTeam.map((id) => `<img alt="${esc(getHero(id).name)}" title="${esc(getHero(id).name)}" src="${this.portrait(id, 'enemy')}" />`).join('');
+    const foes = this.enemyDeploy.map((d) => d.heroId).map((id) => `<img alt="${esc(getHero(id).name)}" title="${esc(getHero(id).name)}" src="${this.portrait(id, 'enemy')}" />`).join('');
     this.el.actions.innerHTML = `
       <div class="deploy-panel">
         <div>
-          <div class="eyebrow">${esc(this.map.name)}</div>
+          <div class="eyebrow">${esc(this.spec.label)} · ${esc(this.map.name)}</div>
           <h2>Posiciona a tua equipa</h2>
         </div>
         <p>Guerreiros à frente aguentam o embate; arqueiros e magos rendem mais atrás, de preferência numa colina. Inimigos visíveis do outro lado.</p>
         <div class="deploy-row">
           <div class="foes"><span>Adversários</span>${foes}</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn ghost" id="dep-back">‹ Equipa</button>
-            <button class="btn" id="dep-map">Outro mapa</button>
+            ${this.spec.onBack ? `<button class="btn ghost" id="dep-back">${esc(this.spec.backLabel ?? '‹ Voltar')}</button>` : ''}
+            ${this.spec.rerollMap ? '<button class="btn" id="dep-map">Outro mapa</button>' : ''}
             <button class="btn primary" id="dep-go">Combater</button>
           </div>
         </div>
       </div>`;
-    this.el.actions.querySelector('#dep-back')!.addEventListener('click', () => this.backToSelect());
-    this.el.actions.querySelector('#dep-map')!.addEventListener('click', () => {
-      const others = MAPS.filter((m) => m.id !== this.map.id);
-      this.map = others[Math.floor(Math.random() * others.length)];
-      this.startDeploy(true);
-    });
+    this.el.actions.querySelector('#dep-back')?.addEventListener('click', () => this.spec.onBack?.());
+    this.el.actions.querySelector('#dep-map')?.addEventListener('click', () => this.launch(this.spec.rerollMap!()));
     this.el.actions.querySelector('#dep-go')!.addEventListener('click', () => this.startBattle());
   }
 
@@ -435,6 +534,7 @@ export class Game {
   private backToSelect() {
     this.phase = 'deploy';
     this.battleEl.hidden = true;
+    this.hideOtherScreens();
     this.selectEl.hidden = false;
     this.renderSelect();
   }
@@ -450,6 +550,9 @@ export class Game {
     this.surrenderArmed = false;
     this.view.syncUnits(state);
     this.el.actions.innerHTML = '';
+    this.logLines = [];
+    this.el.log.innerHTML = '';
+    this.renderTutorial();
     this.busy = true;
     await this.play(events);
     this.busy = false;
@@ -459,6 +562,9 @@ export class Game {
   private async play(events: BattleEvent[]) {
     for (const ev of events) {
       this.onEventHud(ev);
+      const sfx = this.sfxFor(ev);
+      if (sfx) audio.play(sfx);
+      this.tutorialCheck(ev);
       await this.view.animate(ev, this.state);
     }
     this.view.syncUnits(this.state);
@@ -468,6 +574,10 @@ export class Game {
   /** Runs AI turns until it is the player's turn or the battle ends. */
   private async advance() {
     while (this.phase === 'battle' && !this.state.winner && activeUnit(this.state)?.side === 'enemy') {
+      if (this.spec.winBeforeEnemyActs) {
+        this.state.winner = 'enemy';
+        break;
+      }
       await this.runAiTurn();
     }
     if (this.state.winner) return this.finish();
@@ -484,7 +594,7 @@ export class Game {
     this.refreshBoard();
     await this.view.wait(320);
     const unitId = this.state.active!.unitId;
-    const commands = planTurn(cloneState(this.state), { noise: DIFFICULTY_NOISE[this.difficulty], random: Math.random });
+    const commands = planTurn(cloneState(this.state), { noise: this.spec.noise, random: Math.random });
     for (const cmd of commands) {
       if (this.phase !== 'battle' || this.state.winner || this.state.active?.unitId !== unitId) break;
       if (cmd.type === 'ability') {
@@ -556,6 +666,7 @@ export class Game {
     this.showThreat = !this.showThreat;
     this.el.threat.setAttribute('aria-pressed', String(this.showThreat));
     this.refreshBoard();
+    this.tutorialCheck();
   }
 
   private cancel() {
@@ -822,7 +933,7 @@ export class Game {
       const u = getUnit(s, id);
       if (!u.alive) return '';
       const h = getHero(u.heroId);
-      return `<div class="order-chip ${u.side} ${cls}" title="${esc(h.name)} · VEL ${h.stats.spd}"><img alt="${esc(h.name)}" src="${this.portrait(u.heroId, u.side)}" /></div>`;
+      return `<div class="order-chip ${u.side} ${cls}" title="${esc(h.name)} · VEL ${u.stats.spd}"><img alt="${esc(h.name)}" src="${this.portrait(u.heroId, u.side)}" /></div>`;
     };
     const now = s.queue.map((id, i) => chip(id, i === 0 && id === currentId ? 'current' : '')).join('');
     const next = cloneState(s);
@@ -835,7 +946,7 @@ export class Game {
 
   private unitCard(u: Unit) {
     const h = getHero(u.heroId);
-    const pct = (n: number) => `${Math.max(0, Math.min(100, (n / h.stats.maxHp) * 100))}%`;
+    const pct = (n: number) => `${Math.max(0, Math.min(100, (n / u.stats.maxHp) * 100))}%`;
     const color = u.side === 'player' ? 'var(--ally)' : 'var(--foe)';
     const statuses = u.statuses
       .map((st) => {
@@ -848,12 +959,12 @@ export class Game {
     return `<div class="card ${u.side === 'player' ? 'ally-card' : 'foe-card'}">
       <div class="card-head">
         <img alt="" src="${this.portrait(u.heroId, u.side)}" />
-        <div><div class="n">${esc(h.name)}</div><div class="t">${CLASS_GLYPH[h.heroClass]} ${CLASS_LABEL[h.heroClass]} · ${esc(h.title)}</div></div>
+        <div><div class="n">${esc(h.name)}</div><div class="t">${CLASS_GLYPH[h.heroClass]} ${CLASS_LABEL[h.heroClass]} · <span style="color:${ELEMENT_COLOR[u.element]}">${ELEMENT_LABEL[u.element]}</span></div></div>
       </div>
-      <div class="bar-label"><span>Vida${u.shield ? ` · escudo ${u.shield}` : ''}</span><b class="num">${u.hp} / ${h.stats.maxHp}</b></div>
+      <div class="bar-label"><span>Vida${u.shield ? ` · escudo ${u.shield}` : ''}</span><b class="num">${u.hp} / ${u.stats.maxHp}</b></div>
       <div class="bigbar"><i style="width:${pct(u.hp)};background:${color}"></i><i class="sh" style="width:${pct(u.shield)}"></i></div>
       <div class="enline"><span>Energia</span><div class="bigbar"><i style="width:${u.energy}%;background:var(--brass)"></i></div><b class="num" style="color:${u.energy >= RULES.energyMax ? 'var(--brass)' : 'var(--parchment)'}">${u.energy}</b></div>
-      <div class="stats num"><span>ATQ<b>${h.stats.atk}</b></span><span>DEF<b>${h.stats.def}</b></span><span>MOV<b>${h.stats.mov}</b></span><span>VEL<b>${h.stats.spd}</b></span><span>ALC<b>${h.attack.min}–${h.attack.max}</b></span></div>
+      <div class="stats num"><span>ATQ<b>${u.stats.atk}</b></span><span>DEF<b>${u.stats.def}</b></span><span>MOV<b>${u.stats.mov}</b></span><span>VEL<b>${u.stats.spd}</b></span><span>ALC<b>${h.attack.min}–${h.attack.max}</b></span></div>
       ${statuses ? `<div class="statuses">${statuses}</div>` : ''}
       ${terrain !== 'plain' ? `<div class="t" style="color:var(--muted)">Em ${TERRAIN_LABEL[terrain].toLowerCase()}</div>` : ''}
     </div>`;
@@ -983,7 +1094,7 @@ export class Game {
   // =============================================================== end of match
 
   private quit() {
-    if (this.phase === 'deploy') return this.backToSelect();
+    if (this.phase === 'deploy') return this.spec.onBack ? this.spec.onBack() : this.backToSelect();
     if (this.phase !== 'battle') return;
     if (!this.surrenderArmed) {
       this.surrenderArmed = true;
@@ -1001,6 +1112,11 @@ export class Game {
     this.el.quit.textContent = '✕';
     this.el.quit.style.width = '';
     this.state.winner = 'enemy';
+    if (this.spec.kind === 'tutorial') {
+      this.phase = 'over';
+      this.battleEl.querySelector('.tutorial')?.remove();
+      return this.backToSelect();
+    }
     void this.finish(true);
   }
 
@@ -1015,31 +1131,53 @@ export class Game {
     this.el.actions.innerHTML = '';
     this.el.actions.hidden = true;
     this.el.hint.innerHTML = '';
+    this.battleEl.querySelector('.tutorial')?.remove();
     const s = this.state;
     const won = s.winner === 'player';
     const draw = s.winner === 'draw';
-    if (won) {
-      this.record.wins += 1;
-      this.record.streak += 1;
-    } else if (!draw) {
-      this.record.losses += 1;
-      this.record.streak = 0;
+    if (this.spec.countsForRecord) {
+      if (won) {
+        this.record.wins += 1;
+        this.record.streak += 1;
+      } else if (!draw) {
+        this.record.losses += 1;
+        this.record.streak = 0;
+      }
+      saveRecord(this.record);
     }
-    saveRecord(this.record);
+    audio.play(won ? 'victory' : 'defeat');
     if (!surrendered) {
       this.banner(won ? 'Vitória' : draw ? 'Empate' : 'Derrota', '', won ? 'player' : 'enemy');
       await this.view.wait(1100);
     }
-    this.showResult(won, draw, surrendered);
+    const outcome: MatchOutcome = { winner: s.winner, surrendered, state: s, seconds: Math.round((Date.now() - this.startedAt) / 1000) };
+    if (this.spec.onFinish) this.spec.onFinish(outcome);
+    else
+      this.showResult(outcome, {
+        primary: { label: 'Outra partida', fn: () => this.spec.onRematch?.() },
+        secondary: { label: 'Mudar equipa', fn: () => this.backToSelect() },
+      });
   }
 
-  private showResult(won: boolean, draw: boolean, surrendered: boolean) {
-    const s = this.state;
-    const secs = Math.round((Date.now() - this.startedAt) / 1000);
+  /** Result modal shared by every mode; modes supply their own buttons and extra content. */
+  showResult(
+    o: MatchOutcome,
+    opts: {
+      title?: string;
+      sub?: string;
+      extraHtml?: string;
+      primary: { label: string; fn: () => void };
+      secondary?: { label: string; fn: () => void };
+    },
+  ) {
+    const s = o.state;
+    const won = o.winner === 'player';
+    const draw = o.winner === 'draw';
+    const secs = o.seconds;
     const mine = s.units.filter((u) => u.side === 'player');
     const score = (u: Unit) => u.combat.damageDealt + u.combat.healingDone * 0.8 + u.combat.kills * 10;
     const mvp = [...mine].sort((a, b) => score(b) - score(a))[0];
-    const timeout = s.round >= 12 && s.units.some((u) => u.side === 'enemy' && u.alive) && s.units.some((u) => u.side === 'player' && u.alive);
+    const timeout = s.round >= RULES.maxRounds && s.units.some((u) => u.side === 'enemy' && u.alive) && s.units.some((u) => u.side === 'player' && u.alive);
     const rows = mine
       .map(
         (u) => `<tr class="${u.alive ? '' : 'dead'}">
@@ -1051,47 +1189,106 @@ export class Game {
     const enemiesLeft = s.units.filter((u) => u.side === 'enemy' && u.alive).length;
     const alliesLeft = mine.filter((u) => u.alive).length;
     const tip = TIPS[Math.floor(Math.random() * TIPS.length)];
-    const sub = surrendered
-      ? 'Desististe da partida.'
-      : timeout
-        ? `Limite de 12 rondas atingido: decidido pela vida restante.`
-        : won
-          ? `${alliesLeft} de 4 heróis de pé.`
-          : `Ficaram ${enemiesLeft} inimigo${enemiesLeft === 1 ? '' : 's'} de pé.`;
+    const sub =
+      opts.sub ??
+      (o.surrendered
+        ? 'Desististe da partida.'
+        : timeout
+          ? `Limite de ${RULES.maxRounds} rondas atingido: decidido pela vida restante.`
+          : won
+            ? `${alliesLeft} de ${mine.length} heróis de pé.`
+            : `Ficaram ${enemiesLeft} inimigo${enemiesLeft === 1 ? '' : 's'} de pé.`);
 
     const back = document.createElement('div');
     back.className = 'modal-back';
     back.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-label="Resultado">
       <div>
-        <div class="eyebrow">${esc(this.map.name)} · ${this.difficulty === 'recruit' ? 'Recruta' : 'Veterano'}</div>
-        <h2 class="result-title ${won ? 'win' : 'loss'}">${won ? 'Vitória' : draw ? 'Empate' : 'Derrota'}</h2>
-        <p class="result-sub">${sub}</p>
+        <div class="eyebrow">${esc(this.spec.label)} · ${esc(this.map.name)}</div>
+        <h2 class="result-title ${won ? 'win' : 'loss'}">${esc(opts.title ?? (won ? 'Vitória' : draw ? 'Empate' : 'Derrota'))}</h2>
+        <p class="result-sub">${esc(sub)}</p>
       </div>
       <div class="kpis">
         <div class="kpi"><b class="num">${s.round}</b><span>rondas</span></div>
         <div class="kpi"><b class="num">${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}</b><span>duração</span></div>
-        <div class="kpi"><b class="num">${this.record.wins}–${this.record.losses}</b><span>registo total</span></div>
+        <div class="kpi"><b class="num">${this.record.wins}–${this.record.losses}</b><span>registo (partidas rápidas)</span></div>
       </div>
+      ${opts.extraHtml ?? ''}
       <div class="table-wrap"><table class="stats-table">
         <thead><tr><th>Herói</th><th>Dano</th><th>Cura</th><th>Sofrido</th><th>Abates</th></tr></thead>
         <tbody>${rows}</tbody>
       </table></div>
       <div class="feedback"><b>Dica:</b> ${esc(tip)}</div>
       <div class="modal-actions">
-        <button class="btn ghost" id="res-team">Mudar equipa</button>
-        <button class="btn primary" id="res-again">Outra partida</button>
+        ${opts.secondary ? `<button class="btn ghost" id="res-second">${esc(opts.secondary.label)}</button>` : ''}
+        <button class="btn primary" id="res-first">${esc(opts.primary.label)}</button>
       </div>
     </div>`;
     this.battleEl.appendChild(back);
-    back.querySelector<HTMLButtonElement>('#res-again')!.focus();
-    back.querySelector('#res-again')!.addEventListener('click', () => {
+    back.querySelector<HTMLButtonElement>('#res-first')!.focus();
+    back.querySelector('#res-first')!.addEventListener('click', () => {
       back.remove();
-      this.startDeploy();
+      opts.primary.fn();
     });
-    back.querySelector('#res-team')!.addEventListener('click', () => {
+    back.querySelector('#res-second')?.addEventListener('click', () => {
       back.remove();
-      this.backToSelect();
+      opts.secondary!.fn();
     });
+  }
+
+  // =============================================================== tutorial
+
+  private renderTutorial() {
+    this.battleEl.querySelector('.tutorial')?.remove();
+    const steps = this.spec.tutorial;
+    if (!steps || this.tutorialStep >= steps.length) return;
+    const step = steps[this.tutorialStep];
+    const el = document.createElement('div');
+    el.className = 'tutorial';
+    el.innerHTML = `<div class="eyebrow">Treino · passo ${this.tutorialStep + 1} de ${steps.length}</div>
+      <p>${step.text}</p>
+      ${step.button ? `<button class="btn primary" id="tut-next">${esc(step.button)}</button>` : ''}`;
+    this.battleEl.appendChild(el);
+    el.querySelector('#tut-next')?.addEventListener('click', () => this.advanceTutorial());
+  }
+
+  private advanceTutorial() {
+    this.tutorialStep += 1;
+    audio.play('click');
+    this.renderTutorial();
+  }
+
+  private tutorialCheck(event?: BattleEvent) {
+    const steps = this.spec?.tutorial;
+    if (!steps || this.phase !== 'battle' || this.tutorialStep >= steps.length) return;
+    const step = steps[this.tutorialStep];
+    if (step.until?.({ event, state: this.state, threatOn: this.showThreat })) this.advanceTutorial();
+  }
+
+  private sfxFor(ev: BattleEvent): Sfx | null {
+    switch (ev.type) {
+      case 'move':
+        return 'step';
+      case 'damage':
+        return ev.amount >= 12 ? 'bigHit' : 'hit';
+      case 'heal':
+        return ev.amount > 0 ? 'heal' : null;
+      case 'shrine':
+        return 'heal';
+      case 'shield':
+        return 'shield';
+      case 'status':
+        return ev.status === 'empower' || ev.status === 'guard' ? 'shield' : 'status';
+      case 'death':
+        return 'death';
+      case 'abilityUsed': {
+        const u = getUnit(this.state, ev.unitId);
+        return findAbility(u.heroId, ev.abilityId).ultimate ? 'ult' : null;
+      }
+      case 'turnStart':
+        return getUnit(this.state, ev.unitId).side === 'player' ? 'turn' : null;
+      default:
+        return null;
+    }
   }
 
   private showHelp() {

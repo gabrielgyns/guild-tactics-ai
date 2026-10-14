@@ -3,6 +3,7 @@ import { posKey, samePos, terrainAt } from '../domain/board';
 import { findAbility, getHero } from '../domain/heroes';
 import type { BattleEvent, BattleState, Board, DamageTag, Pos, StatusKind, Unit } from '../domain/types';
 import { buildHeroModel, mat, type HeroModel } from './models';
+import { ELEMENT_COLOR } from '../domain/elements';
 
 export type HighlightKind = 'move' | 'moveDanger' | 'attack' | 'range' | 'area' | 'heal' | 'deploy' | 'select' | 'path' | 'threat';
 
@@ -19,13 +20,14 @@ const HL: Record<HighlightKind, { color: number; opacity: number }> = {
   select: { color: 0xffd166, opacity: 0.95 },
 };
 
-const TERRAIN_HEIGHT = { plain: 0, forest: 0, hill: 0.36, rock: 0, water: -0.22 } as const;
+const TERRAIN_HEIGHT = { plain: 0, forest: 0, hill: 0.36, rock: 0, water: -0.22, shrine: 0.06 } as const;
 const GRASS = {
   plain: [0x74ad52, 0x7db85b, 0x6aa24a, 0x82bb60],
   forest: [0x3f7a3a, 0x4a8743, 0x386f34, 0x447f3e],
   hill: [0x9cb86a, 0xa9c477, 0x93ad62, 0xb0c97e],
   rock: [0x7f8c6c, 0x86937a, 0x768462, 0x8a9878],
   water: [0x3b8fd6, 0x3b8fd6, 0x3b8fd6, 0x3b8fd6],
+  shrine: [0xc9c1a6, 0xd4cdb4, 0xbdb497, 0xcfc7ab],
 };
 
 export const STATUS_LABEL: Record<StatusKind, string> = {
@@ -48,6 +50,8 @@ export const TAG_LABEL: Record<DamageTag, string> = {
   execute: 'Execução',
   collision: 'Colisão',
   burn: 'Queimadura',
+  advantage: 'Vantagem',
+  resisted: 'Resistido',
 };
 
 interface Tween {
@@ -105,6 +109,9 @@ export class BattleView {
   private units = new Map<string, UnitView>();
   private tweens: Tween[] = [];
   private azimuth = Math.PI / 4;
+  private zoom = 1;
+  private targetZoom = 1;
+  private focus = new THREE.Vector3();
   private shake = 0;
   private raycaster = new THREE.Raycaster();
   private pointer = new THREE.Vector2();
@@ -173,6 +180,14 @@ export class BattleView {
       this.handlePointer(e, true);
     });
     el.addEventListener('pointerleave', () => this.setHoverInternal(null));
+    el.addEventListener(
+      'wheel',
+      (e) => {
+        e.preventDefault();
+        this.zoomBy(e.deltaY < 0 ? 1.12 : 1 / 1.12);
+      },
+      { passive: false },
+    );
     el.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       this.onRightClick();
@@ -189,6 +204,7 @@ export class BattleView {
     this.boardGroup.clear();
     this.hitBoxes = [];
     this.water = [];
+    this.shrineCrystals = [];
     this.overlays = [];
     for (const u of this.units.values()) this.removeUnitView(u);
     this.units.clear();
@@ -261,6 +277,7 @@ export class BattleView {
         }
         if (t === 'forest') this.addTrees(c, rnd);
         if (t === 'rock') this.addRocks(c, rnd);
+        if (t === 'shrine') this.addShrine(c);
         if (t === 'hill') {
           const stone = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.1, 0.16), mat(0xa7a294));
           stone.position.set(c.x + 0.36, top + 0.05, c.z - 0.36);
@@ -311,6 +328,29 @@ export class BattleView {
         this.boardGroup.add(m);
       }
     }
+  }
+
+  private shrineCrystals: THREE.Mesh[] = [];
+
+  private addShrine(c: THREE.Vector3) {
+    const top = TERRAIN_HEIGHT.shrine;
+    for (const [dx, dz] of [
+      [-0.38, -0.38],
+      [0.38, 0.38],
+    ]) {
+      const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.34, 0.12), mat(0xe8e2cc));
+      pillar.position.set(c.x + dx, top + 0.17, c.z + dz);
+      pillar.castShadow = true;
+      this.boardGroup.add(pillar);
+      const crystal = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.14, 0.1), mat(0xc9a0ff, 0x7a4adf));
+      crystal.position.set(c.x + dx, top + 0.44, c.z + dz);
+      crystal.userData.phase = dx * 3;
+      this.shrineCrystals.push(crystal);
+      this.boardGroup.add(crystal);
+    }
+    const rune = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.012, 0.5), mat(0xd9c7ff, 0x5a32a8));
+    rune.position.set(c.x, top + 0.006, c.z);
+    this.boardGroup.add(rune);
   }
 
   private addRocks(c: THREE.Vector3, rnd: () => number) {
@@ -411,7 +451,7 @@ export class BattleView {
     this.scene.add(model.root);
     const tag = document.createElement('div');
     tag.className = `unit-tag side-${u.side}`;
-    tag.innerHTML = `<div class="tag-icons"></div><div class="hpbar"><div class="hp-ghost"></div><div class="hp-fill"></div><div class="hp-shield"></div></div><div class="enbar"><div></div></div>`;
+    tag.innerHTML = `<div class="tag-icons"></div><div class="hprow"><span class="el-dot" style="background:${ELEMENT_COLOR[u.element]}"></span><div class="hpbar"><div class="hp-ghost"></div><div class="hp-fill"></div><div class="hp-shield"></div></div></div><div class="enbar"><div></div></div>`;
     this.tagLayer.appendChild(tag);
     const view: UnitView = {
       id: u.id,
@@ -424,7 +464,7 @@ export class BattleView {
       icons: tag.querySelector('.tag-icons')!,
       hp: u.hp,
       shield: u.shield,
-      maxHp: getHero(u.heroId).stats.maxHp,
+      maxHp: u.stats.maxHp,
       pos: { ...u.pos },
       alive: true,
     };
@@ -484,6 +524,11 @@ export class BattleView {
 
   // ------------------------------------------------------------ camera & loop
 
+  /** Zoom in/out; when zoomed in the camera follows the active unit. */
+  zoomBy(factor: number) {
+    this.targetZoom = Math.max(0.8, Math.min(2.2, this.targetZoom * factor));
+  }
+
   rotate(dir: 1 | -1) {
     const from = this.azimuth;
     const to = from + (dir * Math.PI) / 2;
@@ -525,9 +570,26 @@ export class BattleView {
     const sy = this.shake ? (Math.random() - 0.5) * this.shake : 0;
     this.shake *= 0.86;
     if (this.shake < 0.003) this.shake = 0;
-    this.camera.position.set(Math.sin(this.azimuth) * R + sx, R * 0.92 + sy, Math.cos(this.azimuth) * R);
-    this.camera.lookAt(sx, -0.4 + sy, 0);
+    if (Math.abs(this.zoom - this.targetZoom) > 0.001) {
+      this.zoom += (this.targetZoom - this.zoom) * 0.2;
+      this.camera.zoom = this.zoom;
+      this.camera.updateProjectionMatrix();
+    }
+    const want = new THREE.Vector3();
+    const followed = this.activeId ? this.units.get(this.activeId) : undefined;
+    if (this.zoom > 1.05 && followed?.alive) {
+      // Follow strength grows with zoom so the board edge never jumps.
+      want.copy(followed.model.root.position).setY(0).multiplyScalar(Math.min(1, (this.zoom - 1) * 1.4));
+    }
+    this.focus.lerp(want, 0.08);
+    const f = this.focus;
+    this.camera.position.set(f.x + Math.sin(this.azimuth) * R + sx, R * 0.92 + sy, f.z + Math.cos(this.azimuth) * R);
+    this.camera.lookAt(f.x + sx, -0.4 + sy, f.z);
 
+    for (const c of this.shrineCrystals) {
+      c.rotation.y = time * 1.2 + c.userData.phase;
+      c.position.y = 0.5 + Math.sin(time * 2 + c.userData.phase) * 0.04;
+    }
     for (const w of this.water) w.position.y = -0.32 + Math.sin(time * 1.6 + w.userData.phase) * 0.02;
     (this.cursor.material as THREE.MeshBasicMaterial).opacity = 0.75 + Math.sin(time * 6) * 0.2;
 
@@ -708,6 +770,15 @@ export class BattleView {
       case 'cleanse':
         this.floater(ev.unitId, 'Purificado', 'buff');
         return this.wait(120);
+      case 'shrine': {
+        const v = this.units.get(ev.unitId);
+        if (!v) return;
+        v.hp = Math.min(v.maxHp, v.hp + ev.heal);
+        this.renderTag(v);
+        this.floater(ev.unitId, `Santuário${ev.heal ? ` +${ev.heal}` : ''}`, 'buff');
+        this.burst(v.model.root.position.clone().add(new THREE.Vector3(0, 0.2, 0)), 0xc9a0ff, 10, true);
+        return this.wait(260);
+      }
       case 'extraTurn':
         this.floater(ev.unitId, 'Turno extra!', 'buff');
         return this.wait(300);

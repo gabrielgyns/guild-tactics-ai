@@ -58,10 +58,23 @@ dano = ATQ × poder × 1,25 × 10 / (10 + DEF)        (mágico usa DEF / 2)
 × (1 + 0,15 × aliados do atacante encostados ao alvo)   — cerco
 × 1,3    alvo marcado
 × 0,7    atacante enfraquecido
+× 1,3 / 0,8  vantagem / desvantagem elemental
 × 0,5    alvo em guarda
 mínimo 1, arredondado
 ```
 O escudo absorve antes da vida. Colisões de empurrão causam 3 de dano fixo.
+
+### Elementos
+Fogo vence Natureza, Natureza vence Água, Água vence Fogo; Luz e Sombra vencem-se mutuamente.
+Vantagem: **×1,3** de dano; desvantagem: **×0,8**. O elemento é do herói (todas as suas habilidades o usam).
+
+| Elemento | Heróis |
+| --- | --- |
+| 🔥 Fogo | Kael, Seren |
+| 💧 Água | Tobin, Vex |
+| 🌿 Natureza | Brann, Lyra |
+| ☀ Luz | Mira |
+| ☾ Sombra | Orrin |
 
 ### Terreno
 | Terreno | Movimento | Efeito |
@@ -69,6 +82,7 @@ O escudo absorve antes da vida. Colisões de empurrão causam 3 de dano fixo.
 | Planície | 1 | — |
 | Floresta | 2 | −25% de dano recebido |
 | Colina | 2 | +20% de dano e +1 de alcance à distância |
+| Santuário | 1 | Quem começa o turno aqui recupera 4 de vida e ganha 15 de energia |
 | Rocha / Água | — | Intransponível |
 
 ### Energia e golpe supremo
@@ -140,7 +154,7 @@ A visão de longo prazo junta quatro referências, cada uma a contribuir com uma
 
 Ordem proposta (de trás para a frente: cada camada só entra se a anterior prender os jogadores):
 
-1. **Clareza e profundidade do combate** — zona de ameaça ✅, energia e supremos ✅, tutorial guiado, objetivos de mapa.
+1. **Clareza e profundidade do combate** — zona de ameaça ✅, energia e supremos ✅, elementos ✅, santuários (objetivo de mapa) ✅, tutorial guiado ✅, som e zoom ✅.
 2. **Rejogabilidade** — modo Expedição (roguelite de 4–5 combates), desafio diário, draft.
 3. **Coleção e progressão** — elementos, níveis e evolução de classe, vínculos, equipamento, mais heróis.
 4. **Fortaleza da guilda** — base com edifícios que dão recursos e melhorias.

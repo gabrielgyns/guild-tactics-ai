@@ -113,8 +113,9 @@ describe('damage model', () => {
     const kael = getUnit(s, 'p0-kael');
     const lyra = getUnit(s, 'e0-lyra');
     const q = computeDamage(s, kael, lyra, { kind: 'damage', power: 1 });
-    // 11 ATK × 1.25 pacing × 10/12 DEF = 11.46, flanked by Brann ×1.15 = 13.2
-    expect(q.amount).toBe(13);
+    // 11 ATK × 1.25 pacing × 10/12 DEF = 11.46, flanked ×1.15, fire vs nature ×1.3 = 17.1
+    expect(q.amount).toBe(17);
+    expect(q.tags).toContain('advantage');
     expect(q.tags).toContain('flank');
   });
 
@@ -131,7 +132,7 @@ describe('damage model', () => {
     applyCommand(s, { type: 'ability', abilityId: 'attack', target: { x: 2, y: 2 } });
     const lyra = getUnit(s, 'e0-lyra');
     expect(lyra.shield).toBe(0);
-    expect(lyra.hp).toBe(20 - (13 - 5));
+    expect(lyra.hp).toBe(20 - (17 - 5));
   });
 
   it('execute doubles damage on wounded targets', () => {
@@ -181,15 +182,15 @@ describe('abilities', () => {
   });
 
   it('quick abilities do not end the turn, but only one per turn', () => {
-    const s = battle([{ heroId: 'kael', pos: { x: 2, y: 3 } }], [{ heroId: 'lyra', pos: { x: 2, y: 0 } }]);
+    const s = battle([{ heroId: 'kael', pos: { x: 2, y: 3 } }], [{ heroId: 'mira', pos: { x: 2, y: 0 } }]);
     activate(s, 'p0-kael');
     applyCommand(s, { type: 'ability', abilityId: 'fury', target: { x: 2, y: 3 } });
     expect(s.active?.unitId).toBe('p0-kael');
     expect(getUnit(s, 'p0-kael').statuses[0].kind).toBe('empower');
     applyCommand(s, { type: 'move', to: { x: 2, y: 1 } });
     applyCommand(s, { type: 'ability', abilityId: 'attack', target: { x: 2, y: 0 } });
-    // (11 + 4) × 1.25 × 10/12 = 15.6 → 16
-    expect(getUnit(s, 'e0-lyra').hp).toBe(4);
+    // (11 + 4) × 1.25 × 10/13 = 14.4 → 14 (fire vs light is neutral)
+    expect(getUnit(s, 'e0-mira').hp).toBe(8);
   });
 
   it('cooldowns block reuse until enough turns passed', () => {
@@ -221,6 +222,47 @@ describe('abilities', () => {
     expect(s.active?.unitId).toBe('e0-kael');
     const [entry] = previewAbility(s, 'e0-kael', 'attack', { x: 2, y: 3 });
     expect(entry.tags).toContain('guard');
+  });
+});
+
+describe('elements and shrines', () => {
+  it('fire beats nature, water resists fire, light and shadow beat each other', () => {
+    const s = battle(
+      [
+        { heroId: 'seren', pos: { x: 0, y: 5 } },
+        { heroId: 'mira', pos: { x: 5, y: 5 } },
+      ],
+      [
+        { heroId: 'lyra', pos: { x: 0, y: 0 } },
+        { heroId: 'vex', pos: { x: 3, y: 0 } },
+        { heroId: 'orrin', pos: { x: 5, y: 0 } },
+      ],
+    );
+    const hit = (a: string, t: string) => computeDamage(s, getUnit(s, a), getUnit(s, t), { kind: 'damage', power: 1 }).tags;
+    expect(hit('p0-seren', 'e0-lyra')).toContain('advantage');
+    expect(hit('p0-seren', 'e1-vex')).toContain('resisted');
+    expect(hit('p1-mira', 'e2-orrin')).toContain('advantage');
+    expect(hit('e2-orrin', 'p1-mira')).toContain('advantage');
+  });
+
+  it('a shrine heals and charges the unit that starts its turn on it', () => {
+    const s = battle(
+      [{ heroId: 'tobin', pos: { x: 2, y: 2 }, hp: 10 }],
+      [{ heroId: 'brann', pos: { x: 5, y: 0 } }],
+      flatBoard({ '2,2': 'shrine' }),
+    );
+    // Tobin (speed 8) acts first and starts on the shrine.
+    expect(getUnit(s, 'p0-tobin').hp).toBe(14);
+    expect(getUnit(s, 'p0-tobin').energy).toBe(RULES.energyPerTurn + RULES.shrineEnergy);
+  });
+
+  it('deployments can carry bonuses, starting HP and energy', () => {
+    const s = battle([{ heroId: 'brann', pos: { x: 0, y: 5 }, bonus: { atk: 3, maxHp: 6 }, hp: 20, energy: 50 }], [{ heroId: 'kael', pos: { x: 5, y: 0 } }]);
+    const b = getUnit(s, 'p0-brann');
+    expect(b.stats.atk).toBe(11);
+    expect(b.stats.maxHp).toBe(40);
+    expect(b.hp).toBe(20);
+    expect(b.energy).toBeGreaterThanOrEqual(50);
   });
 });
 
