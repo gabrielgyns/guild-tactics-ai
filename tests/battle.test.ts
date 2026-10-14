@@ -9,6 +9,9 @@ import {
   getUnit,
   previewAbility,
   reachableTiles,
+  RULES,
+  sideThreat,
+  threatTiles,
   validTargets,
   type Deployment,
 } from '../src/domain/battle';
@@ -218,6 +221,41 @@ describe('abilities', () => {
     expect(s.active?.unitId).toBe('e0-kael');
     const [entry] = previewAbility(s, 'e0-kael', 'attack', { x: 2, y: 3 });
     expect(entry.tags).toContain('guard');
+  });
+});
+
+describe('energy and ultimates', () => {
+  it('energy fills at turn start and from damage, and ultimates need a full bar', () => {
+    const s = battle([{ heroId: 'kael', pos: { x: 2, y: 3 } }], [{ heroId: 'lyra', pos: { x: 2, y: 2 } }]);
+    activate(s, 'p0-kael');
+    expect(canUseAbility(s, 'p0-kael', 'blade_dance').ok).toBe(false);
+    const before = getUnit(s, 'e0-lyra').energy;
+    applyCommand(s, { type: 'ability', abilityId: 'attack', target: { x: 2, y: 2 } });
+    expect(getUnit(s, 'p0-kael').energy).toBeGreaterThan(0);
+    // Lyra took damage and then started her turn.
+    expect(getUnit(s, 'e0-lyra').energy).toBeGreaterThan(before + RULES.energyPerTurn);
+  });
+
+  it('using an ultimate empties the bar; blade dance hits twice', () => {
+    const s = battle([{ heroId: 'kael', pos: { x: 2, y: 3 } }], [{ heroId: 'brann', pos: { x: 2, y: 2 } }]);
+    activate(s, 'p0-kael');
+    getUnit(s, 'p0-kael').energy = RULES.energyMax;
+    const ev = applyCommand(s, { type: 'ability', abilityId: 'blade_dance', target: { x: 2, y: 2 } });
+    expect(ev.filter((e) => e.type === 'damage').length).toBe(2);
+    expect(getUnit(s, 'p0-kael').energy).toBeLessThan(RULES.energyMax);
+  });
+});
+
+describe('threat zone', () => {
+  it('covers move range plus attack range, and nothing for stunned units', () => {
+    const s = battle([{ heroId: 'mira', pos: { x: 0, y: 5 } }], [{ heroId: 'kael', pos: { x: 0, y: 0 } }]);
+    const tiles = threatTiles(s, 'e0-kael');
+    // Kael: 3 move + 1 reach from (0,0) → Manhattan 4 on open ground.
+    expect(tiles.some((p) => p.x === 0 && p.y === 4)).toBe(true);
+    expect(tiles.some((p) => p.x === 0 && p.y === 5)).toBe(false);
+    expect(sideThreat(s, 'player').has('0,4')).toBe(true);
+    getUnit(s, 'e0-kael').statuses.push({ kind: 'stun', remaining: 1, amount: 0, sourceId: 'x', fresh: false });
+    expect(threatTiles(s, 'e0-kael')).toEqual([]);
   });
 });
 

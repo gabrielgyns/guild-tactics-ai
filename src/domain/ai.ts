@@ -11,6 +11,7 @@ import {
   opponent,
   reachableTiles,
   resolveAbility,
+  RULES,
 } from './battle';
 import { manhattan, terrainAt } from './board';
 import { basicAttack, getHero, heroAbilities } from './heroes';
@@ -37,7 +38,7 @@ const STATUS_VALUE: Record<string, (amount: number, remaining: number) => number
 
 function unitValue(s: BattleState, u: Unit): number {
   if (!u.alive) return 0;
-  let v = 25 + u.hp + u.shield * 0.6;
+  let v = 25 + u.hp + u.shield * 0.6 + u.energy * 0.06;
   for (const st of u.statuses) v += STATUS_VALUE[st.kind](st.amount, st.remaining);
   // Units that still get to act this round are worth more.
   v += s.queue.slice(1).filter((id) => id === u.id).length * 8;
@@ -114,7 +115,12 @@ function targetsFor(s: BattleState, u: Unit, ability: Ability): Pos[] {
 }
 
 function usable(u: Unit, ability: Ability): boolean {
-  return (u.cooldowns[ability.id] ?? 0) === 0;
+  return (u.cooldowns[ability.id] ?? 0) === 0 && (!ability.ultimate || u.energy >= RULES.energyMax);
+}
+
+/** Opportunity cost of spending an ability now. */
+function spendCost(ability: Ability): number {
+  return ability.ultimate ? 3 : ability.cooldown * 0.4;
 }
 
 /** Best (move, main action) from the given state. */
@@ -149,7 +155,7 @@ function bestMoveAndAct(s: BattleState, unitId: string, side: Side, base: number
         resolveAbility(sim, caster, ability, target, []);
         let score = evaluate(sim, side) - base + positionalScore(sim, caster);
         // Don't burn a long cooldown for nothing.
-        score -= ability.cooldown * 0.4;
+        score -= spendCost(ability);
         consider([...pre, { type: 'ability', abilityId: ability.id, target }], score);
       }
     }
@@ -176,7 +182,7 @@ export function planTurn(s: BattleState, opts: AiOptions = { noise: 0, random: M
         sim.active!.usedQuick = true;
         if (sim.winner) continue;
         const follow = bestMoveAndAct(sim, unitId, side, base, opts);
-        const score = follow.score - q.cooldown * 0.4;
+        const score = follow.score - spendCost(q);
         if (score > best.score) {
           best = { commands: [{ type: 'ability', abilityId: q.id, target }, ...follow.commands], score };
         }

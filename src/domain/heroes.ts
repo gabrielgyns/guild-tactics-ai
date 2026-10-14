@@ -16,6 +16,112 @@ export const CLASS_GLYPH: Record<HeroClass, string> = {
   support: '✚',
 };
 
+const ult = (a: Omit<Ability, 'cooldown' | 'ultimate'>): Ability => ({ ...a, cooldown: 0, ultimate: true });
+
+/** Signature moves, unlocked by a full energy bar (fills from turns, damage dealt and taken). */
+const ULTIMATES: Record<string, Ability> = {
+  brann: ult({
+    id: 'fortress',
+    name: 'Fortaleza',
+    description: 'Supremo: Brann e aliados adjacentes recebem 14 de escudo e ficam em guarda (−50% de dano).',
+    range: { min: 0, max: 0 },
+    target: 'self',
+    area: { kind: 'around', radius: 1 },
+    affects: 'allies',
+    effects: [
+      { kind: 'shield', amount: 14 },
+      { kind: 'status', status: 'guard', duration: 1 },
+    ],
+  }),
+  kael: ult({
+    id: 'blade_dance',
+    name: 'Dança das Lâminas',
+    description: 'Supremo: dois golpes de 110%; o segundo é uma execução (dobro se o alvo tiver metade da vida ou menos).',
+    range: { min: 1, max: 1 },
+    target: 'enemy',
+    area: { kind: 'single' },
+    affects: 'enemies',
+    effects: [
+      { kind: 'damage', power: 1.1 },
+      { kind: 'damage', power: 1.1, executeBelow: 0.5 },
+    ],
+  }),
+  lyra: ult({
+    id: 'piercing_arrow',
+    name: 'Flecha Perfurante',
+    description: 'Supremo: 150% de dano a todos os inimigos numa linha reta de 5 casas. Ignora cobertura.',
+    range: { min: 1, max: 5 },
+    target: 'tile',
+    straight: true,
+    area: { kind: 'line', length: 5 },
+    affects: 'enemies',
+    effects: [{ kind: 'damage', power: 1.5, ignoreCover: true }],
+  }),
+  tobin: ult({
+    id: 'trap_field',
+    name: 'Campo de Armadilhas',
+    description: 'Supremo: inimigos numa cruz sofrem 70% de dano, ficam presos e marcados.',
+    range: { min: 1, max: 4 },
+    target: 'tile',
+    area: { kind: 'around', radius: 1 },
+    affects: 'enemies',
+    effects: [
+      { kind: 'damage', power: 0.7 },
+      { kind: 'status', status: 'root', duration: 1 },
+      { kind: 'status', status: 'mark', duration: 1, amount: 30 },
+    ],
+  }),
+  seren: ult({
+    id: 'inferno',
+    name: 'Inferno',
+    description: 'Supremo: 130% de dano mágico numa cruz e queima (4 por turno, 2 turnos).',
+    range: { min: 2, max: 4 },
+    target: 'tile',
+    area: { kind: 'around', radius: 1 },
+    affects: 'enemies',
+    effects: [
+      { kind: 'damage', power: 1.3, magic: true },
+      { kind: 'status', status: 'burn', duration: 2, amount: 4 },
+    ],
+  }),
+  vex: ult({
+    id: 'eternal_winter',
+    name: 'Inverno Eterno',
+    description: 'Supremo: todos os inimigos a até 2 casas sofrem 60% de dano mágico e ficam atordoados.',
+    range: { min: 0, max: 0 },
+    target: 'self',
+    area: { kind: 'around', radius: 2 },
+    affects: 'enemies',
+    effects: [
+      { kind: 'damage', power: 0.6, magic: true },
+      { kind: 'status', status: 'stun', duration: 1 },
+    ],
+  }),
+  mira: ult({
+    id: 'grace',
+    name: 'Graça Divina',
+    description: 'Supremo: todos os aliados recuperam 12 de vida e perdem os efeitos negativos.',
+    range: { min: 0, max: 0 },
+    target: 'self',
+    area: { kind: 'around', radius: 12 },
+    affects: 'allies',
+    effects: [{ kind: 'cleanse' }, { kind: 'heal', amount: 12 }],
+  }),
+  orrin: ult({
+    id: 'anthem',
+    name: 'Hino dos Heróis',
+    description: 'Supremo: todos os aliados ganham +4 ATK nos próximos 2 turnos e 6 de escudo.',
+    range: { min: 0, max: 0 },
+    target: 'self',
+    area: { kind: 'around', radius: 12 },
+    affects: 'allies',
+    effects: [
+      { kind: 'status', status: 'empower', duration: 2, amount: 4 },
+      { kind: 'shield', amount: 6 },
+    ],
+  }),
+};
+
 export const HEROES: HeroDef[] = [
   {
     id: 'brann',
@@ -23,6 +129,7 @@ export const HEROES: HeroDef[] = [
     title: 'Bastião',
     heroClass: 'warrior',
     lore: 'Ferreiro que trocou a bigorna por um escudo. Ninguém passa por ele.',
+    ultimate: ULTIMATES.brann,
     stats: { maxHp: 34, atk: 8, def: 6, mov: 3, spd: 3 },
     attack: { min: 1, max: 1, magic: false },
     palette: { primary: 0x8a95a5, secondary: 0x5b4636, skin: 0xe0ac7e, hair: 0x7a4a2a, accent: 0xd9a441 },
@@ -72,6 +179,7 @@ export const HEROES: HeroDef[] = [
     title: 'Lâmina Rubra',
     heroClass: 'warrior',
     lore: 'Duelista de arena. Fica mais perigoso quando cheira sangue.',
+    ultimate: ULTIMATES.kael,
     stats: { maxHp: 30, atk: 11, def: 4, mov: 3, spd: 6 },
     attack: { min: 1, max: 1, magic: false },
     palette: { primary: 0xa33b3b, secondary: 0x2e2a2a, skin: 0xc68a5e, hair: 0x1d1d1d, accent: 0xe6e0d0 },
@@ -118,6 +226,7 @@ export const HEROES: HeroDef[] = [
     title: 'Olho de Falcão',
     heroClass: 'ranger',
     lore: 'Batedora das torres do norte. Nunca falha o segundo tiro.',
+    ultimate: ULTIMATES.lyra,
     stats: { maxHp: 20, atk: 9, def: 2, mov: 3, spd: 7 },
     attack: { min: 2, max: 3, magic: false },
     palette: { primary: 0x3f7d4a, secondary: 0x6b5232, skin: 0xf0c8a0, hair: 0xd9a441, accent: 0xe6e0d0 },
@@ -166,6 +275,7 @@ export const HEROES: HeroDef[] = [
     title: 'Caçador',
     heroClass: 'ranger',
     lore: 'Armadilheiro dos pântanos. Prefere que o inimigo nunca chegue perto.',
+    ultimate: ULTIMATES.tobin,
     stats: { maxHp: 22, atk: 8, def: 3, mov: 4, spd: 8 },
     attack: { min: 2, max: 3, magic: false },
     palette: { primary: 0x7a5c2e, secondary: 0x3b4a2a, skin: 0x8d5a3b, hair: 0x2b1b10, accent: 0xb5c46a },
@@ -218,7 +328,8 @@ export const HEROES: HeroDef[] = [
     title: 'Chama Viva',
     heroClass: 'mage',
     lore: 'Aprendiz expulsa da academia por incendiar a biblioteca. Duas vezes.',
-    stats: { maxHp: 18, atk: 11, def: 1, mov: 3, spd: 5 },
+    ultimate: ULTIMATES.seren,
+    stats: { maxHp: 18, atk: 10, def: 1, mov: 3, spd: 5 },
     attack: { min: 1, max: 3, magic: true },
     palette: { primary: 0xd2642a, secondary: 0x5a2340, skin: 0xf0c8a0, hair: 0xe8e4da, accent: 0xffc24a },
     abilities: [
@@ -266,6 +377,7 @@ export const HEROES: HeroDef[] = [
     title: 'Tecelã do Gelo',
     heroClass: 'mage',
     lore: 'Fala pouco e congela muito. Os guardas evitam o seu corredor.',
+    ultimate: ULTIMATES.vex,
     stats: { maxHp: 20, atk: 9, def: 2, mov: 3, spd: 5 },
     attack: { min: 1, max: 3, magic: true },
     palette: { primary: 0x3d6fb5, secondary: 0x1f2b4a, skin: 0xd8c8e8, hair: 0x9fd8ff, accent: 0xbfe9ff },
@@ -315,6 +427,7 @@ export const HEROES: HeroDef[] = [
     title: 'Luz da Aurora',
     heroClass: 'support',
     lore: 'Sacerdotisa itinerante. Cura primeiro, faz perguntas depois.',
+    ultimate: ULTIMATES.mira,
     stats: { maxHp: 22, atk: 6, def: 3, mov: 3, spd: 6 },
     attack: { min: 1, max: 2, magic: true },
     palette: { primary: 0xe8e4da, secondary: 0xd9a441, skin: 0xc68a5e, hair: 0x3a2416, accent: 0x7fd6a0 },
@@ -322,13 +435,13 @@ export const HEROES: HeroDef[] = [
       {
         id: 'heal',
         name: 'Cura',
-        description: 'Recupera 14 de vida a um aliado (ou a si própria) a até 3 casas.',
+        description: 'Recupera 16 de vida a um aliado (ou a si própria) a até 3 casas.',
         range: { min: 0, max: 3 },
         target: 'ally',
         area: { kind: 'single' },
         affects: 'allies',
         cooldown: 2,
-        effects: [{ kind: 'heal', amount: 14 }],
+        effects: [{ kind: 'heal', amount: 16 }],
       },
       {
         id: 'blessing',
@@ -361,6 +474,7 @@ export const HEROES: HeroDef[] = [
     title: 'Trovador',
     heroClass: 'support',
     lore: 'Toca alaúde em tabernas e tambores em batalhas. Sabe exatamente quando.',
+    ultimate: ULTIMATES.orrin,
     stats: { maxHp: 24, atk: 7, def: 3, mov: 3, spd: 7 },
     attack: { min: 1, max: 2, magic: false },
     palette: { primary: 0x7b4fa0, secondary: 0xd9a441, skin: 0xe0ac7e, hair: 0xb5562b, accent: 0x5bc0be },
@@ -438,7 +552,7 @@ export const DEFEND: Ability = {
 
 /** Full action list for a hero, in action-bar order. */
 export function heroAbilities(hero: HeroDef): Ability[] {
-  return [basicAttack(hero), ...hero.abilities, DEFEND];
+  return [basicAttack(hero), ...hero.abilities, hero.ultimate, DEFEND];
 }
 
 export function findAbility(heroId: string, abilityId: string): Ability {

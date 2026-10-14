@@ -71,6 +71,24 @@ O escudo absorve antes da vida. Colisões de empurrão causam 3 de dano fixo.
 | Colina | 2 | +20% de dano e +1 de alcance à distância |
 | Rocha / Água | — | Intransponível |
 
+### Energia e golpe supremo
+- Cada herói ganha **20 de energia** no início do turno e **1,5 por ponto de dano** causado ou sofrido (máx. 100).
+- Com a barra cheia pode usar o seu **supremo**, que gasta a barra toda. Na simulação, cada herói chega a um supremo em ~50% das partidas; com jogadores humanos (que os procuram ativamente) deve ser mais.
+
+| Herói | Supremo |
+| --- | --- |
+| Brann | Fortaleza — 14 de escudo e guarda para si e aliados adjacentes |
+| Kael | Dança das Lâminas — dois golpes de 110%, o segundo com execução |
+| Lyra | Flecha Perfurante — 150% numa linha de 5 casas, ignora cobertura |
+| Tobin | Campo de Armadilhas — 70% numa cruz, prende e marca |
+| Seren | Inferno — 130% mágico numa cruz e queimadura |
+| Vex | Inverno Eterno — 60% mágico e atordoa todos os inimigos a até 2 casas |
+| Mira | Graça Divina — todos os aliados recuperam 12 e são purificados |
+| Orrin | Hino dos Heróis — todos os aliados ganham +4 ATQ (2 turnos) e 6 de escudo |
+
+### Zona de ameaça
+`T` (ou o botão ⚠) mostra as casas que os inimigos atingem no próximo turno com o ataque básico (movimento + alcance). Passar o rato sobre um inimigo mostra só a zona dele; casas de movimento em perigo ficam roxas.
+
 ### Estados
 Duram um número de turnos **do próprio afetado**; aplicados no próprio turno, não contam esse turno.
 Atordoado (perde o turno), Preso (não move), A arder (dano no início do turno), Marcado (+30% de dano recebido),
@@ -109,9 +127,21 @@ A IA não é um bom substituto de jogadores: estes números servem para detetar 
 - Táticas dominantes (ex.: Seren + Inspirar, ou tanque com Muralha a bloquear corredores).
 - Regresso após 1 dia e após 1 semana.
 
-## 8. Próximos passos possíveis (só se o combate funcionar)
+## 8. Visão completa e roadmap
 
-1. Telemetria mínima (duração, heróis escolhidos, resultado) para os testes.
-2. Mais 2–3 mapas com identidade (ponte estreita, planalto central).
-3. Sistema de desafios ("vence só com dois guerreiros").
-4. PvP assíncrono: as regras já são puras e determinísticas, por isso uma partida pode ser reproduzida a partir da lista de comandos.
+A visão de longo prazo junta quatro referências, cada uma a contribuir com uma camada (sem copiar nomes, mecânicas proprietárias ou visuais):
+
+| Referência | Camada que inspira | Onde encaixa no Guild Tactics |
+| --- | --- | --- |
+| Fire Emblem: Three Houses | Combate tático, vínculos entre personagens, progressão de classes | **O núcleo** — o combate deste slice; vínculos dão bónus a pares de heróis que lutam juntos |
+| Pokémon | Coleção, afinidades elementais, evolução | Heróis com elemento e evolução de classe (ex.: Arqueiro → Atirador / Caçador) |
+| Summoners War | Gacha de monstros, runas/equipamento, arena com defesas | Equipamento com atributos; arena assíncrona onde se ataca a defesa de outro jogador |
+| Clash of Clans | Base, recursos ao longo do tempo, raides, clãs | Fortaleza da guilda que produz recursos e treina heróis; guildas e guerras de guilda |
+
+Ordem proposta (de trás para a frente: cada camada só entra se a anterior prender os jogadores):
+
+1. **Clareza e profundidade do combate** — zona de ameaça ✅, energia e supremos ✅, tutorial guiado, objetivos de mapa.
+2. **Rejogabilidade** — modo Expedição (roguelite de 4–5 combates), desafio diário, draft.
+3. **Coleção e progressão** — elementos, níveis e evolução de classe, vínculos, equipamento, mais heróis.
+4. **Fortaleza da guilda** — base com edifícios que dão recursos e melhorias.
+5. **PvP assíncrono e guildas** — defesas, ranking por temporada, guerras de guilda. As regras já são puras e determinísticas, por isso uma partida pode ser reproduzida a partir da lista de comandos.

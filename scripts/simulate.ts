@@ -2,7 +2,7 @@
 import { planTurn } from '../src/domain/ai';
 import { applyCommand, cloneState, createBattle } from '../src/domain/battle';
 import { MAPS, buildBoard } from '../src/domain/board';
-import { HEROES } from '../src/domain/heroes';
+import { HEROES, findAbility } from '../src/domain/heroes';
 
 const N = Number(process.argv[2] ?? 200);
 const ids = HEROES.map((h) => h.id);
@@ -10,6 +10,7 @@ const wins: Record<string, number> = {};
 const plays: Record<string, number> = {};
 const rounds: number[] = [];
 const turnMs: number[] = [];
+const ultUses: Record<string, number> = {};
 const outcome = { player: 0, enemy: 0, draw: 0, timeout: 0 };
 
 for (let m = 0; m < N; m++) {
@@ -28,7 +29,7 @@ for (let m = 0; m < N; m++) {
     const t = performance.now();
     const cmds = planTurn(cloneState(s), { noise: 1, random: Math.random });
     turnMs.push(performance.now() - t);
-    for (const c of cmds) { if (s.winner) break; const ev = applyCommand(s, c); if (ev.some(e => e.type === 'victory' && e.reason === 'timeout')) timeout = true; }
+    for (const c of cmds) { if (s.winner) break; const ev = applyCommand(s, c); for (const e of ev) if (e.type === 'abilityUsed') { const u = s.units.find((x) => x.id === e.unitId)!; if (findAbility(u.heroId, e.abilityId).ultimate) ultUses[u.heroId] = (ultUses[u.heroId] ?? 0) + 1; } if (ev.some(e => e.type === 'victory' && e.reason === 'timeout')) timeout = true; }
   }
   outcome[s.winner as 'player'] += 1;
   if (timeout) outcome.timeout++;
@@ -40,4 +41,4 @@ const avg = (a: number[]) => a.reduce((x, y) => x + y, 0) / a.length;
 console.log('outcomes', outcome);
 console.log('rounds avg', avg(rounds).toFixed(2), 'min', Math.min(...rounds), 'max', Math.max(...rounds));
 console.log('AI ms/turn avg', avg(turnMs).toFixed(1), 'max', Math.max(...turnMs).toFixed(1));
-for (const h of ids) console.log(h.padEnd(8), ((100 * (wins[h] ?? 0)) / plays[h]).toFixed(1) + '%', `(${plays[h]})`);
+for (const h of ids) console.log(h.padEnd(8), ((100 * (wins[h] ?? 0)) / plays[h]).toFixed(1) + '%', `(${plays[h]})`, 'ults/match', ((ultUses[h] ?? 0) / plays[h]).toFixed(2));

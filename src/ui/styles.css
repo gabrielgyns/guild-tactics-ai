@@ -469,6 +469,25 @@ kbd {
   to { opacity: 1; }
 }
 .unit-tag.low .hpbar { border-color: #6a1410; }
+.enbar {
+  width: 46px;
+  height: 3px;
+  background: #0b0f13;
+  border: 1px solid #000;
+  border-top: 0;
+  margin-top: -2px;
+}
+.enbar > div {
+  height: 100%;
+  width: 0;
+  background: var(--brass);
+  transition: width 0.3s;
+}
+.unit-tag.ult-ready .enbar > div {
+  background: #ffe08a;
+  box-shadow: 0 0 6px #ffd166;
+  animation: ghost 0.6s ease-in-out infinite alternate;
+}
 .unit-tag.targeted .hpbar { outline: 1px solid #fff3c4; }
 .unit-tag.lethal .hpbar { outline: 2px solid var(--danger); }
 .tag-icons {
@@ -813,6 +832,30 @@ kbd {
   border-radius: var(--radius);
   color: #fff;
 }
+.act.ult {
+  border-color: var(--brass-deep);
+  background: linear-gradient(#2e2818, #1f1b12);
+  overflow: hidden;
+}
+.act.ult .an { color: #ffe08a; }
+.act.ult .energy {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--brass);
+}
+.act.ult.ready {
+  box-shadow: 0 0 0 1px var(--brass), 0 0 14px rgba(226, 176, 74, 0.45);
+  animation: ultPulse 1.2s ease-in-out infinite alternate;
+}
+@keyframes ultPulse {
+  from { box-shadow: 0 0 0 1px var(--brass), 0 0 6px rgba(226, 176, 74, 0.3); }
+  to { box-shadow: 0 0 0 1px var(--brass), 0 0 18px rgba(226, 176, 74, 0.7); }
+}
+.icon-btn[aria-pressed='true'] { background: #4a1814; border-color: var(--foe); color: #ffd6d2; }
+.enline { display: flex; align-items: center; gap: 6px; font-family: var(--font-cond); font-size: 12.5px; color: var(--muted); }
+.enline .bigbar { flex: 1; height: 6px; }
 .act.sys { width: auto; min-width: 84px; align-content: center; text-align: center; }
 .act.sys .an { padding: 0; }
 .act.end { border-color: var(--brass-deep); }
@@ -1032,7 +1075,7 @@ table.stats-table {
   .card-head .n { font-size: 16px; }
   .card .stats { display: none; }
   .log { display: none; }
-  .act { width: calc((100vw - 64px) / 5); min-width: 62px; min-height: 52px; padding: 5px 4px 4px; }
+  .act { width: calc((100vw - 70px) / 6); min-width: 52px; min-height: 52px; padding: 5px 4px 4px; }
   .act .an { font-size: 12.5px; padding-right: 0; }
   .act .k { display: none; }
   .act .meta { font-size: 10.5px; }

@@ -4,10 +4,12 @@ import { findAbility, getHero } from '../domain/heroes';
 import type { BattleEvent, BattleState, Board, DamageTag, Pos, StatusKind, Unit } from '../domain/types';
 import { buildHeroModel, mat, type HeroModel } from './models';
 
-export type HighlightKind = 'move' | 'attack' | 'range' | 'area' | 'heal' | 'deploy' | 'select' | 'path';
+export type HighlightKind = 'move' | 'moveDanger' | 'attack' | 'range' | 'area' | 'heal' | 'deploy' | 'select' | 'path' | 'threat';
 
 const HL: Record<HighlightKind, { color: number; opacity: number }> = {
   move: { color: 0x58b4ff, opacity: 0.55 },
+  moveDanger: { color: 0xc58bff, opacity: 0.6 },
+  threat: { color: 0xff3b30, opacity: 0.45 },
   path: { color: 0xbfe3ff, opacity: 0.85 },
   attack: { color: 0xff5a4e, opacity: 0.7 },
   range: { color: 0xff7a6e, opacity: 0.28 },
@@ -62,6 +64,7 @@ interface UnitView {
   hpFill: HTMLDivElement;
   hpGhost: HTMLDivElement;
   shieldFill: HTMLDivElement;
+  energyFill: HTMLDivElement;
   icons: HTMLDivElement;
   hp: number;
   shield: number;
@@ -391,6 +394,8 @@ export class BattleView {
       }
       view.hp = u.hp;
       view.shield = u.shield;
+      view.energyFill.style.width = `${u.energy}%`;
+      view.tag.classList.toggle('ult-ready', u.energy >= 100);
       view.pos = { ...u.pos };
       const sp = this.standPoint(u.pos);
       view.model.root.position.copy(sp);
@@ -406,7 +411,7 @@ export class BattleView {
     this.scene.add(model.root);
     const tag = document.createElement('div');
     tag.className = `unit-tag side-${u.side}`;
-    tag.innerHTML = `<div class="tag-icons"></div><div class="hpbar"><div class="hp-ghost"></div><div class="hp-fill"></div><div class="hp-shield"></div></div>`;
+    tag.innerHTML = `<div class="tag-icons"></div><div class="hpbar"><div class="hp-ghost"></div><div class="hp-fill"></div><div class="hp-shield"></div></div><div class="enbar"><div></div></div>`;
     this.tagLayer.appendChild(tag);
     const view: UnitView = {
       id: u.id,
@@ -415,6 +420,7 @@ export class BattleView {
       hpFill: tag.querySelector('.hp-fill')!,
       hpGhost: tag.querySelector('.hp-ghost')!,
       shieldFill: tag.querySelector('.hp-shield')!,
+      energyFill: tag.querySelector('.enbar > div')!,
       icons: tag.querySelector('.tag-icons')!,
       hp: u.hp,
       shield: u.shield,
@@ -766,6 +772,15 @@ export class BattleView {
     const origin = v.model.root.position.clone().add(new THREE.Vector3(0, 0.55, 0));
     const targetPoint = this.standPoint(ev.target).add(new THREE.Vector3(0, 0.45, 0));
     const fxColor = hero.palette.accent;
+    if (ability.ultimate) {
+      this.shake = 0.12;
+      this.burst(origin, 0xffd166, 22, true);
+      await this.tween(380, (t) => {
+        v.model.body.position.y = Math.sin(t * Math.PI) * 0.4;
+        v.model.body.rotation.y = t * Math.PI * 2;
+      });
+      v.model.body.rotation.y = 0;
+    }
 
     if (selfCast) {
       await this.tween(260, (t) => (v.model.body.position.y = Math.sin(t * Math.PI) * 0.18));

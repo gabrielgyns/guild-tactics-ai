@@ -12,6 +12,9 @@ import {
   rangeTiles,
   reachableTiles,
   roundOrder,
+  RULES,
+  sideThreat,
+  threatTiles,
   unitAt,
   validTargets,
   type Deployment,
@@ -102,6 +105,7 @@ export class Game {
   private startedAt = 0;
   private logLines: { text: string; side: Side }[] = [];
   private surrenderArmed = false;
+  private showThreat = false;
 
   constructor(private app: HTMLElement) {}
 
@@ -150,8 +154,11 @@ export class Game {
     const cards = HEROES.map((h) => {
       const idx = this.team.indexOf(h.id);
       const s = h.stats;
-      const abil = h.abilities
-        .map((a) => `<div><b>${esc(a.name)}</b>${a.quick ? '<span class="q">rápida</span>' : ''} — ${esc(a.description)}</div>`)
+      const abil = [...h.abilities, h.ultimate]
+        .map(
+          (a) =>
+            `<div><b>${esc(a.name)}</b>${a.quick ? '<span class="q">rápida</span>' : ''}${a.ultimate ? '<span class="q">supremo</span>' : ''} — ${esc(a.description.replace(/^Supremo: /, ''))}</div>`,
+        )
         .join('');
       return `<button class="hero-card" data-hero="${h.id}" aria-pressed="${idx >= 0}">
         ${idx >= 0 ? `<span class="pick-badge">${idx + 1}</span>` : ''}
@@ -246,8 +253,10 @@ export class Game {
         <div><h4>O turno</h4><p>Cada herói joga quando chega a sua vez (ordem no topo, por velocidade). No teu turno podes <b>mover</b> e depois fazer <b>uma ação</b>: atacar, usar uma habilidade ou defender. A ação termina o turno. Ações <em>rápidas</em> não terminam.</p></div>
         <div><h4>Vencer</h4><p>Derrota os quatro heróis inimigos. Ao fim de 12 rondas vence quem tiver mais vida (em %).</p></div>
         <div><h4>Terreno</h4><ul><li><b>Floresta</b>: −25% de dano recebido, custa 2 de movimento.</li><li><b>Colina</b>: +20% de dano e +1 de alcance à distância, custa 2.</li><li><b>Rocha</b> e <b>água</b>: intransponíveis.</li></ul></div>
+        <div><h4>Energia e supremo</h4><p>Cada herói ganha energia no início do turno e ao causar ou sofrer dano. Com a barra dourada cheia, desbloqueia o seu <b>golpe supremo</b>, que gasta a barra toda.</p></div>
+        <div><h4>Zona de ameaça</h4><p>Carrega em <kbd>T</kbd> (ou no botão ⚠) para ver as casas que os inimigos conseguem atingir no próximo turno. Passar o rato sobre um inimigo mostra só o alcance dele. Casas de movimento a roxo estão em perigo.</p></div>
         <div><h4>Sinergias</h4><ul><li><b>Cerco</b>: +15% de dano por cada aliado teu encostado ao alvo.</li><li>Recargas (número sobre o botão) obrigam a gerir habilidades.</li><li>Passa o rato sobre um alvo para ver o dano exato antes de agir.</li></ul></div>
-        <div><h4>Controlos</h4><p><kbd>1</kbd>–<kbd>5</kbd> ações · <kbd>Espaço</kbd> terminar turno · <kbd>Esc</kbd> cancelar / desfazer movimento · <kbd>Q</kbd> <kbd>E</kbd> rodar câmara. No telemóvel: toca uma vez para pré-visualizar e outra para confirmar.</p></div>
+        <div><h4>Controlos</h4><p><kbd>1</kbd>–<kbd>6</kbd> ações · <kbd>T</kbd> zona de ameaça · <kbd>Espaço</kbd> terminar turno · <kbd>Esc</kbd> cancelar / desfazer movimento · <kbd>Q</kbd> <kbd>E</kbd> rodar câmara. No telemóvel: toca uma vez para pré-visualizar e outra para confirmar.</p></div>
       </div>
     </details>`;
   }
@@ -265,6 +274,7 @@ export class Game {
           <div class="round-box"><div class="r num" data-ref="round"></div><div class="m" data-ref="mapname"></div></div>
           <div class="order" data-ref="order"></div>
           <div class="top-btns">
+            <button class="icon-btn" data-ref="threat" title="Zona de ameaça inimiga (T)" aria-label="Mostrar zona de ameaça inimiga" aria-pressed="false">⚠</button>
             <button class="icon-btn" data-ref="rotl" title="Rodar câmara (Q)" aria-label="Rodar câmara para a esquerda">⟲</button>
             <button class="icon-btn" data-ref="rotr" title="Rodar câmara (E)" aria-label="Rodar câmara para a direita">⟳</button>
             <button class="icon-btn" data-ref="speed" title="Velocidade das animações">1×</button>
@@ -292,6 +302,7 @@ export class Game {
     this.view.onClick = (p, type) => this.onClick(p, type);
     this.view.onRightClick = () => this.cancel();
 
+    this.el.threat.addEventListener('click', () => this.toggleThreat());
     this.el.rotl.addEventListener('click', () => this.view.rotate(-1));
     this.el.rotr.addEventListener('click', () => this.view.rotate(1));
     this.el.speed.addEventListener('click', () => {
@@ -527,9 +538,10 @@ export class Game {
     if (k === 'q') this.view.rotate(-1);
     else if (k === 'e') this.view.rotate(1);
     else if (k === 'escape') this.cancel();
+    else if (k === 't') this.toggleThreat();
     else if (this.phase === 'battle' && this.isPlayerTurn()) {
       const n = Number(e.key);
-      if (n >= 1 && n <= 5) {
+      if (n >= 1 && n <= 6) {
         const unit = activeUnit(this.state)!;
         const ability = heroAbilities(getHero(unit.heroId))[n - 1];
         if (ability) this.selectAbility(ability.id);
@@ -538,6 +550,12 @@ export class Game {
         this.exec({ type: 'endTurn' });
       } else if (k === 'z' || k === 'backspace') this.undo();
     }
+  }
+
+  private toggleThreat() {
+    this.showThreat = !this.showThreat;
+    this.el.threat.setAttribute('aria-pressed', String(this.showThreat));
+    this.refreshBoard();
   }
 
   private cancel() {
@@ -677,8 +695,20 @@ export class Game {
     if (unit && unit.side === 'player' && !this.busy) {
       const a = s.active!;
       if (this.mode.kind === 'idle') {
+        // Danger first; everything else paints over it.
+        const danger = this.showThreat ? sideThreat(s, unit.side) : new Set<string>();
+        const hovered = this.hover ? unitAt(s, this.hover) : undefined;
+        if (hovered && hovered.side !== unit.side) for (const p of threatTiles(s, hovered.id)) danger.add(posKey(p));
+        for (const k of danger) hl.set(k, 'threat');
         if (a.canMove && !a.moved) {
-          for (const r of reachableTiles(s, unit.id).values()) if (!samePos(r.pos, unit.pos)) hl.set(posKey(r.pos), 'move');
+          const reach = reachableTiles(s, unit.id);
+          for (const r of reach.values()) {
+            if (samePos(r.pos, unit.pos)) continue;
+            const k = posKey(r.pos);
+            hl.set(k, danger.has(k) ? 'moveDanger' : 'move');
+          }
+          const hoverReach = this.hover ? reach.get(posKey(this.hover)) : undefined;
+          if (hoverReach) for (const p of hoverReach.path.slice(0, -1)) hl.set(posKey(p), 'path');
         }
         if (canUseAbility(s, unit.id, 'attack').ok) {
           for (const p of validTargets(s, unit.id, 'attack')) hl.set(posKey(p), 'attack');
@@ -718,6 +748,7 @@ export class Game {
       case 'abilityUsed': {
         const u = getUnit(s, ev.unitId);
         const ability = findAbility(u.heroId, ev.abilityId);
+        if (ability.ultimate) this.banner(ability.name, `Supremo de ${name(ev.unitId)}`, u.side);
         if (ability.id === 'defend') this.log(`${name(ev.unitId)} defende-se`, u.side);
         else this.log(`${name(ev.unitId)} · ${ability.name}`, u.side);
         break;
@@ -821,6 +852,7 @@ export class Game {
       </div>
       <div class="bar-label"><span>Vida${u.shield ? ` · escudo ${u.shield}` : ''}</span><b class="num">${u.hp} / ${h.stats.maxHp}</b></div>
       <div class="bigbar"><i style="width:${pct(u.hp)};background:${color}"></i><i class="sh" style="width:${pct(u.shield)}"></i></div>
+      <div class="enline"><span>Energia</span><div class="bigbar"><i style="width:${u.energy}%;background:var(--brass)"></i></div><b class="num" style="color:${u.energy >= RULES.energyMax ? 'var(--brass)' : 'var(--parchment)'}">${u.energy}</b></div>
       <div class="stats num"><span>ATQ<b>${h.stats.atk}</b></span><span>DEF<b>${h.stats.def}</b></span><span>MOV<b>${h.stats.mov}</b></span><span>VEL<b>${h.stats.spd}</b></span><span>ALC<b>${h.attack.min}–${h.attack.max}</b></span></div>
       ${statuses ? `<div class="statuses">${statuses}</div>` : ''}
       ${terrain !== 'plain' ? `<div class="t" style="color:var(--muted)">Em ${TERRAIN_LABEL[terrain].toLowerCase()}</div>` : ''}
@@ -863,8 +895,18 @@ export class Game {
         const check = canUseAbility(s, unit.id, a.id);
         const cd = unit.cooldowns[a.id] ?? 0;
         const pressed = this.mode.kind === 'target' && this.mode.abilityId === a.id;
-        const meta = a.quick ? '<span class="qk">rápida</span>' : a.cooldown ? `recarga ${a.cooldown}` : a.id === 'attack' ? `alc. ${a.range.min}–${a.range.max}` : 'sem recarga';
-        return `<button class="act" data-ab="${a.id}" data-i="${i}" aria-pressed="${pressed}" ${check.ok ? '' : 'disabled'}>
+        const meta = a.ultimate
+          ? `<span class="qk">supremo · ${unit.energy}%</span>`
+          : a.quick
+            ? '<span class="qk">rápida</span>'
+            : a.cooldown
+              ? `recarga ${a.cooldown}`
+              : a.id === 'attack'
+                ? `alc. ${a.range.min}–${a.range.max}`
+                : 'sem recarga';
+        const ultCls = a.ultimate ? ` ult${unit.energy >= RULES.energyMax ? ' ready' : ''}` : '';
+        return `<button class="act${ultCls}" data-ab="${a.id}" data-i="${i}" aria-pressed="${pressed}" ${check.ok ? '' : 'disabled'}>
+          ${a.ultimate ? `<span class="energy" style="width:${unit.energy}%"></span>` : ''}
           <span class="k">${i + 1}</span><span class="an">${esc(a.name)}</span><span class="meta">${meta}</span>
           ${cd > 0 ? `<span class="cd num">${cd}</span>` : ''}
         </button>`;
@@ -932,7 +974,7 @@ export class Game {
     if (!a.canMove && !a.moved) {
       h.innerHTML = `<em>${name}</em> está preso e não se pode mover. Escolhe uma ação.`;
     } else if (!a.moved) {
-      h.innerHTML = `Vez de <em>${name}</em>. Clica numa casa azul para mover ou num inimigo a vermelho para atacar.`;
+      h.innerHTML = `Vez de <em>${name}</em>. Clica numa casa azul para mover ou num inimigo a vermelho para atacar. <span style="color:var(--muted)">T mostra o perigo.</span>`;
     } else {
       h.innerHTML = `<em>${name}</em> moveu-se. Escolhe uma ação${a.canUndo ? ' ou <span style="color:var(--muted)">Esc para desfazer</span>' : ''}.`;
     }

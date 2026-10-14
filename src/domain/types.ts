@@ -83,6 +83,8 @@ export interface Ability {
   cooldown: number;
   /** Quick abilities do not end the turn (one per turn). */
   quick?: boolean;
+  /** Ultimates cost a full energy bar instead of having a cooldown. */
+  ultimate?: boolean;
   effects: Effect[];
 }
 
@@ -94,6 +96,7 @@ export interface HeroDef {
   stats: Stats;
   attack: { min: number; max: number; magic: boolean };
   abilities: [Ability, Ability, Ability];
+  ultimate: Ability;
   lore: string;
   palette: { primary: number; secondary: number; skin: number; hair: number; accent: number };
 }
@@ -114,6 +117,8 @@ export interface Unit {
   pos: Pos;
   hp: number;
   shield: number;
+  /** 0–100; a full bar unlocks the hero's ultimate. */
+  energy: number;
   alive: boolean;
   statuses: StatusInstance[];
   cooldowns: Record<string, number>;

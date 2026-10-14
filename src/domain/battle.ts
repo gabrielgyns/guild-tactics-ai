@@ -36,6 +36,11 @@ export const RULES = {
   collisionDamage: 3,
   /** Damage multiplier = DEF_SCALE / (DEF_SCALE + def). */
   defScale: 10,
+  /** Energy: gained at turn start, per point of damage dealt and taken. */
+  energyMax: 100,
+  energyPerTurn: 20,
+  energyPerDamageDealt: 1.5,
+  energyPerDamageTaken: 1.5,
   /** Global pacing knob: raises all damage to keep matches short. */
   damageScale: 1.25,
 };
@@ -60,6 +65,7 @@ export function createBattle(board: Board, player: Deployment[], enemy: Deployme
       pos: { ...d.pos },
       hp: hero.stats.maxHp,
       shield: 0,
+      energy: 0,
       alive: true,
       statuses: [],
       cooldowns: {},
@@ -180,6 +186,34 @@ export function reachableTiles(s: BattleState, unitId: string): Map<string, Reac
   return best;
 }
 
+/**
+ * Tiles a unit could hit with its basic attack next turn (move + attack range).
+ * Computed as if the unit were free to move now, ignoring status effects except stun/root.
+ */
+export function threatTiles(s: BattleState, unitId: string): Pos[] {
+  const unit = getUnit(s, unitId);
+  if (!unit.alive || hasStatus(unit, 'stun')) return [];
+  const hero = getHero(unit.heroId);
+  const origins = hasStatus(unit, 'root') ? [unit.pos] : [...reachableTiles(s, unitId).values()].map((r) => r.pos);
+  const out = new Map<string, Pos>();
+  for (const o of origins) {
+    const max = hero.attack.max + (hero.attack.max > 1 && terrainAt(s.board, o) === 'hill' ? 1 : 0);
+    for (let y = 0; y < s.board.height; y++)
+      for (let x = 0; x < s.board.width; x++) {
+        const d = manhattan(o, { x, y });
+        if (d >= hero.attack.min && d <= max) out.set(posKey({ x, y }), { x, y });
+      }
+  }
+  return [...out.values()];
+}
+
+/** Union of every living enemy's threat (enemies of `side`). */
+export function sideThreat(s: BattleState, side: Side): Set<string> {
+  const keys = new Set<string>();
+  for (const u of aliveUnits(s, opponent(side))) for (const p of threatTiles(s, u.id)) keys.add(posKey(p));
+  return keys;
+}
+
 export function abilityRange(s: BattleState, caster: Unit, ability: Ability) {
   const onHill = terrainAt(s.board, caster.pos) === 'hill';
   const bonus = onHill && ability.range.max > 1 ? 1 : 0;
@@ -283,6 +317,8 @@ export function canUseAbility(s: BattleState, unitId: string, abilityId: string)
   const unit = getUnit(s, unitId);
   const ability = findAbility(unit.heroId, abilityId);
   if (s.active.acted) return { ok: false, reason: 'Já agiu neste turno.' };
+  if (ability.ultimate && unit.energy < RULES.energyMax)
+    return { ok: false, reason: `Energia insuficiente: ${unit.energy}/${RULES.energyMax}.` };
   const cd = unit.cooldowns[abilityId] ?? 0;
   if (cd > 0) return { ok: false, reason: `Em recarga: ${cd} turno${cd > 1 ? 's' : ''}.` };
   if (ability.quick && s.active.usedQuick) return { ok: false, reason: 'Só uma ação rápida por turno.' };
@@ -360,9 +396,17 @@ function dealDamage(
   target.hp -= amount - absorbed;
   target.combat.damageTaken += real;
   const source = s.units.find((u) => u.id === sourceId);
-  if (source && source.side !== target.side) source.combat.damageDealt += real + absorbed;
+  if (source && source.side !== target.side) {
+    source.combat.damageDealt += real + absorbed;
+    gainEnergy(source, amount * RULES.energyPerDamageDealt);
+  }
+  gainEnergy(target, amount * RULES.energyPerDamageTaken);
   events.push({ type: 'damage', unitId: target.id, sourceId, amount, absorbed, tags });
   if (target.hp <= 0) killUnit(s, target, source, events);
+}
+
+function gainEnergy(u: Unit, amount: number) {
+  if (u.alive) u.energy = Math.min(RULES.energyMax, Math.round(u.energy + amount));
 }
 
 function killUnit(s: BattleState, target: Unit, source: Unit | undefined, events: BattleEvent[]) {
@@ -437,6 +481,7 @@ export function resolveAbility(s: BattleState, caster: Unit, ability: Ability, t
   const area = areaOf(s, caster, ability, target);
   events.push({ type: 'abilityUsed', unitId: caster.id, abilityId: ability.id, target: { ...target }, area });
   if (ability.cooldown > 0) caster.cooldowns[ability.id] = ability.cooldown;
+  if (ability.ultimate) caster.energy = 0;
 
   // Caster-level effects first.
   for (const effect of ability.effects) {
@@ -523,6 +568,7 @@ function startNextTurn(s: BattleState, events: BattleEvent[]) {
     }
     events.push({ type: 'turnStart', unitId: unit.id });
     for (const k of Object.keys(unit.cooldowns)) unit.cooldowns[k] = Math.max(0, unit.cooldowns[k] - 1);
+    gainEnergy(unit, RULES.energyPerTurn);
     s.active = { unitId: unit.id, preMovePos: { ...unit.pos }, canUndo: false, moved: false, acted: false, usedQuick: false, canMove: true };
 
     const burn = unit.statuses.find((st) => st.kind === 'burn');
