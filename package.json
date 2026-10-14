@@ -1,0 +1,24 @@
+{
+  "name": "guild-tactics",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Guild Tactics — jogo tático por turnos em voxel (vertical slice)",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "artifact": "npm run build && node scripts/make-artifact.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "three": "0.180.0"
+  },
+  "devDependencies": {
+    "@types/three": "0.180.0",
+    "typescript": "5.9.3",
+    "vite": "7.1.12",
+    "vite-plugin-singlefile": "2.3.0",
+    "vitest": "3.2.4"
+  }
+}
