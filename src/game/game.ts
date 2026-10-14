@@ -29,6 +29,8 @@ import { ELEMENT_COLOR, ELEMENT_GLYPH, ELEMENT_LABEL, elementMatchup } from '../
 import { STATUS_GLYPH, STATUS_LABEL, BattleView, type HighlightKind } from '../render/view';
 import { renderPortrait, renderPortraits } from '../render/models';
 import { applyTraits, teamTraits, type Trait } from '../domain/traits';
+import { masteryMultiplier, GOLD } from '../domain/fortress';
+import { addGold, loadFortress, loadRaw, save } from './profile';
 import { awardMastery, BADGE, levelFor, loadMastery, masteryHtml, skinOf, type MasteryProfile, type Skin } from './mastery';
 import { audio, type Sfx } from '../ui/audio';
 import { TUTORIAL_ENEMY, TUTORIAL_MAP, TUTORIAL_PLAYER, TUTORIAL_STEPS } from './tutorial';
@@ -52,7 +54,7 @@ export interface TutorialStep {
 
 /** Everything the battle screen needs to run one match, whatever the mode. */
 export interface MatchSpec {
-  kind: 'quick' | 'tutorial' | 'expedition' | 'daily' | 'puzzle';
+  kind: 'quick' | 'tutorial' | 'expedition' | 'daily' | 'puzzle' | 'arena' | 'replay';
   label: string;
   map: MapDef;
   player: Deployment[];
@@ -69,6 +71,22 @@ export interface MatchSpec {
   onFinish?: (o: MatchOutcome) => void;
   onRematch?: () => void;
   countsForRecord?: boolean;
+  /** Deployments already include traits (replays): use them as they are. */
+  prepared?: boolean;
+  /** Replay mode: these commands are played back instead of taking input. */
+  replay?: Command[];
+}
+
+/** Everything needed to re-run a finished battle exactly (rules are deterministic). */
+export interface Replay {
+  id: string;
+  title: string;
+  date: string;
+  mapId: string;
+  player: Deployment[];
+  enemy: Deployment[];
+  commands: Command[];
+  winner: Side | 'draw' | null;
 }
 type Mode = { kind: 'idle' } | { kind: 'target'; abilityId: string };
 
@@ -134,6 +152,9 @@ export class Game {
   private portraits = new Map<string, string>();
   private mastery: MasteryProfile = loadMastery();
   private lastMasteryHtml = '';
+  private lastGoldHtml = '';
+  private goldThisMatch = 0;
+  private commandLog: Command[] = [];
   private team: string[] = [];
   private difficulty: Difficulty = 'recruit';
   private record = loadRecord();
@@ -164,6 +185,8 @@ export class Game {
   private logLines: { text: string; side: Side }[] = [];
   private surrenderArmed = false;
   private showThreat = false;
+  /** Auto-battle: the AI plays the player's turns too (toggle with A). */
+  private autoBattle = false;
 
   constructor(private app: HTMLElement) {}
 
@@ -371,6 +394,50 @@ export class Game {
     this.selectEl.scrollTop = scrollY;
   }
 
+  private saveReplay(s: BattleState) {
+    const replays = loadRaw<Replay[]>('replays') ?? [];
+    const enemyGuild = this.spec.label;
+    replays.unshift({
+      id: `${Date.now()}`,
+      title: enemyGuild,
+      date: new Date().toISOString().slice(0, 16).replace('T', ' '),
+      mapId: this.map.id,
+      player: this.initialPlayer,
+      enemy: this.initialEnemy,
+      commands: [...this.commandLog],
+      winner: s.winner,
+    });
+    save('replays', replays.slice(0, 8));
+  }
+
+  /** Plays a stored replay on the battle screen. */
+  watchReplay(r: Replay, map: MapDef, onDone: () => void) {
+    this.launch({
+      kind: 'replay',
+      label: `Replay · ${r.title}`,
+      map,
+      player: r.player,
+      enemy: r.enemy,
+      noise: 0,
+      deploy: false,
+      prepared: true,
+      replay: r.commands,
+      onFinish: () => {
+        const won = r.winner === 'player';
+        this.banner(won ? 'Vitória' : r.winner === 'draw' ? 'Empate' : 'Derrota', 'Fim do replay', won ? 'player' : 'enemy');
+        setTimeout(onDone, 1600);
+      },
+    });
+  }
+
+  /** Adds gold to the fortress treasury and lists it on the result screen. */
+  awardGold(amount: number, reason: string) {
+    if (amount <= 0) return;
+    const f = addGold(amount);
+    this.goldThisMatch += amount;
+    this.lastGoldHtml = `<div class="gold-gain">🪙 +${this.goldThisMatch} de ouro <span class="muted">(${esc(reason)}) · tesouro: ${f.gold}</span></div>`;
+  }
+
   recordSummary() {
     return { ...this.record };
   }
@@ -411,6 +478,7 @@ export class Game {
           <div class="round-box"><div class="r num" data-ref="round"></div><div class="m" data-ref="mapname"></div></div>
           <div class="order" data-ref="order"></div>
           <div class="top-btns">
+            <button class="icon-btn auto" data-ref="auto" title="Combate automático (A)" aria-label="Combate automático" aria-pressed="false">AUTO</button>
             <button class="icon-btn" data-ref="threat" title="Zona de ameaça inimiga (T)" aria-label="Mostrar zona de ameaça inimiga" aria-pressed="false">⚠</button>
             <button class="icon-btn" data-ref="rotl" title="Rodar câmara (Q)" aria-label="Rodar câmara para a esquerda">⟲</button>
             <button class="icon-btn" data-ref="rotr" title="Rodar câmara (E)" aria-label="Rodar câmara para a direita">⟳</button>
@@ -444,6 +512,7 @@ export class Game {
     this.view.onRightClick = () => this.cancel();
 
     this.el.threat.addEventListener('click', () => this.toggleThreat());
+    this.el.auto.addEventListener('click', () => this.toggleAuto());
     this.el.rotl.addEventListener('click', () => this.view.rotate(-1));
     this.el.rotr.addEventListener('click', () => this.view.rotate(1));
     this.el.speed.addEventListener('click', () => {
@@ -527,11 +596,13 @@ export class Game {
     this.map = spec.map;
     this.board = buildBoard(spec.map);
     // Guild traits apply to both sides, except in scripted modes where numbers are hand-tuned.
-    const traits = spec.kind !== 'tutorial' && spec.kind !== 'puzzle';
+    const traits = spec.kind !== 'tutorial' && spec.kind !== 'puzzle' && !spec.prepared;
     const prep = (team: Deployment[]) => (traits ? applyTraits(team) : team).map((d) => ({ ...d, pos: { ...d.pos } }));
     this.playerDeploy = prep(spec.player);
     this.enemyDeploy = prep(spec.enemy);
     this.lastMasteryHtml = '';
+    this.lastGoldHtml = '';
+    this.goldThisMatch = 0;
     this.tutorialStep = 0;
     this.deploySelected = null;
     this.battleEl.querySelectorAll('.modal-back, .tutorial').forEach((n) => n.remove());
@@ -634,7 +705,12 @@ export class Game {
 
   // =============================================================== battle flow
 
+  private initialPlayer: Deployment[] = [];
+  private initialEnemy: Deployment[] = [];
+
   private async startBattle() {
+    this.initialPlayer = this.playerDeploy.map((d) => ({ ...d, pos: { ...d.pos } }));
+    this.initialEnemy = this.enemyDeploy.map((d) => ({ ...d, pos: { ...d.pos } }));
     const { state, events } = createBattle(this.board, this.playerDeploy, this.enemyDeploy);
     this.state = state;
     this.phase = 'battle';
@@ -645,6 +721,7 @@ export class Game {
     this.el.actions.innerHTML = '';
     this.logLines = [];
     this.el.log.innerHTML = '';
+    this.commandLog = [];
     this.renderTutorial();
     this.busy = true;
     await this.play(events);
@@ -665,11 +742,32 @@ export class Game {
   }
 
   /** Runs AI turns until it is the player's turn or the battle ends. */
+  private async runReplay() {
+    const cmds = this.spec.replay!;
+    this.busy = true;
+    this.renderHud();
+    for (const cmd of cmds) {
+      if (this.phase !== 'battle' || this.state.winner) break;
+      await this.view.wait(cmd.type === 'move' ? 120 : 260);
+      await this.applyAndPlay(cmd);
+    }
+    this.busy = false;
+    if (this.phase !== 'battle') return;
+    this.phase = 'over';
+    this.view.setActive(null);
+    this.spec.onFinish?.({ winner: this.state.winner, surrendered: false, state: this.state, seconds: 0 });
+  }
+
   private async advance() {
+    if (this.spec.replay) return this.runReplay();
     if (this.spec.winBeforeEnemyActs && puzzleFailed(this.state)) this.state.winner = 'enemy';
-    while (this.phase === 'battle' && !this.state.winner && activeUnit(this.state)?.side === 'enemy') {
-      if (this.spec.winBeforeEnemyActs) break;
-      await this.runAiTurn();
+    // Enemy turns always run on the AI; player turns too when auto-battle is on.
+    while (this.phase === 'battle' && !this.state.winner) {
+      const side = activeUnit(this.state)?.side;
+      if (side === 'enemy' && this.spec.winBeforeEnemyActs) break;
+      if (side === 'enemy') await this.runAiTurn();
+      else if (side === 'player' && this.autoBattle && this.spec.kind !== 'tutorial' && this.spec.kind !== 'puzzle') await this.runAiTurn(0);
+      else break;
     }
     if (this.state.winner) return this.finish();
     if (this.phase !== 'battle') return;
@@ -679,13 +777,13 @@ export class Game {
     this.refreshBoard();
   }
 
-  private async runAiTurn() {
+  private async runAiTurn(noise = this.spec.noise) {
     this.busy = true;
     this.renderHud();
     this.refreshBoard();
     await this.view.wait(320);
     const unitId = this.state.active!.unitId;
-    const commands = planTurn(cloneState(this.state), { noise: this.spec.noise, random: Math.random });
+    const commands = planTurn(cloneState(this.state), { noise, random: Math.random });
     for (const cmd of commands) {
       if (this.phase !== 'battle' || this.state.winner || this.state.active?.unitId !== unitId) break;
       if (cmd.type === 'ability') {
@@ -707,6 +805,7 @@ export class Game {
     let events: BattleEvent[];
     try {
       events = applyCommand(this.state, cmd);
+      this.commandLog.push(cmd);
     } catch (err) {
       this.toast((err as Error).message);
       return;
@@ -740,6 +839,7 @@ export class Game {
     else if (k === 'e') this.view.rotate(1);
     else if (k === 'escape') this.cancel();
     else if (k === 't') this.toggleThreat();
+    else if (k === 'a') this.toggleAuto();
     else if (this.phase === 'battle' && this.isPlayerTurn()) {
       const n = Number(e.key);
       if (n >= 1 && n <= 6) {
@@ -750,6 +850,17 @@ export class Game {
         e.preventDefault();
         this.exec({ type: 'endTurn' });
       } else if (k === 'z' || k === 'backspace') this.undo();
+    }
+  }
+
+  private toggleAuto() {
+    if (this.spec?.kind === 'tutorial' || this.spec?.kind === 'puzzle') return this.toast('Sem combate automático no treino e nos puzzles.');
+    this.autoBattle = !this.autoBattle;
+    this.el.auto.setAttribute('aria-pressed', String(this.autoBattle));
+    // If it is our turn and nothing is animating, hand it to the AI right away.
+    if (this.autoBattle && this.isPlayerTurn()) {
+      this.mode = { kind: 'idle' };
+      void this.advance();
     }
   }
 
@@ -778,6 +889,7 @@ export class Game {
   private undo() {
     if (this.isPlayerTurn() && this.state.active?.canUndo) {
       const events = applyCommand(this.state, { type: 'undoMove' });
+      this.commandLog.push({ type: 'undoMove' });
       for (const ev of events) void this.view.animate(ev, this.state);
       this.renderHud();
       this.refreshBoard();
@@ -1185,6 +1297,10 @@ export class Game {
   // =============================================================== end of match
 
   private quit() {
+    if (this.spec?.kind === 'replay') {
+      this.phase = 'over';
+      return this.onHub();
+    }
     if (this.phase === 'deploy') return this.spec.onBack ? this.spec.onBack() : this.backToSelect();
     if (this.phase !== 'battle') return;
     if (!this.surrenderArmed) {
@@ -1238,14 +1354,16 @@ export class Game {
     }
     audio.play(won ? 'victory' : 'defeat');
     if (!surrendered && this.spec.kind !== 'tutorial' && this.spec.kind !== 'puzzle') {
-      this.lastMasteryHtml = masteryHtml(awardMastery(s));
+      this.lastMasteryHtml = masteryHtml(awardMastery(s, masteryMultiplier(loadFortress())));
       this.refreshMastery();
     }
+    if (!surrendered && this.spec.kind === 'quick') this.awardGold(won ? GOLD.matchWin : GOLD.matchLoss, won ? 'vitória' : 'participação');
     if (!surrendered) {
       this.banner(won ? 'Vitória' : draw ? 'Empate' : 'Derrota', '', won ? 'player' : 'enemy');
       await this.view.wait(1100);
     }
     const outcome: MatchOutcome = { winner: s.winner, surrendered, state: s, seconds: Math.round((Date.now() - this.startedAt) / 1000) };
+    if (this.spec.kind !== 'tutorial' && this.spec.kind !== 'puzzle' && !surrendered) this.saveReplay(s);
     if (this.spec.onFinish) this.spec.onFinish(outcome);
     else
       this.showResult(outcome, {
@@ -1308,6 +1426,7 @@ export class Game {
         <div class="kpi"><b class="num">${this.record.wins}–${this.record.losses}</b><span>registo (partidas rápidas)</span></div>
       </div>
       ${opts.extraHtml ?? ''}
+      ${this.lastGoldHtml}
       ${this.lastMasteryHtml}
       <div class="table-wrap"><table class="stats-table">
         <thead><tr><th>Herói</th><th>Dano</th><th>Cura</th><th>Sofrido</th><th>Abates</th></tr></thead>

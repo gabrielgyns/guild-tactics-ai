@@ -13,12 +13,12 @@ npm run dev        # http://localhost:5173
 
 ## Modos
 
-Expedição (roguelite de 5 combates), desafio diário, partida rápida, draft, puzzles táticos e um treino guiado — todos a partir do Salão da Guilda.
+Expedição (roguelite de 5 combates), desafio diário, partida rápida, draft, puzzles táticos, treino guiado, Arena das Guildas (PvP assíncrono por códigos de defesa, liga semanal, guerra de guilda, replays), Fortaleza (ouro e edifícios) e Coleção (maestria e visuais) — tudo a partir do Salão da Guilda.
 
 ## Controlos
 
 - Clica numa casa azul para mover; num inimigo a vermelho para atacar.
-- `1`–`6` escolhem ações, `T` mostra a zona de ameaça, `Espaço` termina o turno, `Esc` cancela ou desfaz o movimento, `Q`/`E` rodam a câmara.
+- `1`–`6` escolhem ações, `T` mostra a zona de ameaça, `A` liga o combate automático, `Espaço` termina o turno, `Esc` cancela ou desfaz o movimento, `Q`/`E` rodam a câmara.
 - Passa o rato sobre um alvo para ver o dano exato antes de agir. No telemóvel: um toque pré-visualiza, outro confirma.
 
 ## Estrutura

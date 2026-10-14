@@ -1,3 +1,5 @@
+import { collectMine, earn, newFortress, type FortressState } from '../domain/fortress';
+
 // Per-player progress kept in this browser (localStorage). Every access tolerates storage being unavailable.
 
 const PREFIX = 'guild-tactics.';
@@ -42,4 +44,27 @@ export interface DailyRecord {
 
 export interface PuzzleRecord {
   solved: string[];
+}
+
+// ---------------------------------------------------------------- fortress
+
+
+export function loadFortress(now = Date.now()): FortressState {
+  const f = loadRaw<FortressState>('fortress');
+  if (!f) return newFortress(now);
+  return { ...newFortress(now), ...f, levels: { ...newFortress(now).levels, ...f.levels } };
+}
+
+export const saveFortress = (f: FortressState) => save('fortress', f);
+
+export function addGold(amount: number): FortressState {
+  const f = earn(loadFortress(), amount);
+  saveFortress(f);
+  return f;
+}
+
+export function collectGold(now = Date.now()): FortressState {
+  const f = collectMine(loadFortress(now), now);
+  saveFortress(f);
+  return f;
 }

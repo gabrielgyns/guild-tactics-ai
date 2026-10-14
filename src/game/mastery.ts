@@ -65,7 +65,7 @@ export function xpForUnit(u: Unit, won: boolean, mvp: boolean): number {
 }
 
 /** Awards XP to every player hero that fought and returns what changed. */
-export function awardMastery(state: BattleState): MasteryGain[] {
+export function awardMastery(state: BattleState, multiplier = 1): MasteryGain[] {
   const m = loadMastery();
   const mine = state.units.filter((u) => u.side === 'player');
   const score = (u: Unit) => u.combat.damageDealt + u.combat.healingDone * 0.8 + u.combat.kills * 10;
@@ -73,7 +73,7 @@ export function awardMastery(state: BattleState): MasteryGain[] {
   const won = state.winner === 'player';
   const gains = mine.map((u) => {
     const before = m.xp[u.heroId] ?? 0;
-    const xp = xpForUnit(u, won, u.id === mvp?.id);
+    const xp = Math.round(xpForUnit(u, won, u.id === mvp?.id) * multiplier);
     m.xp[u.heroId] = before + xp;
     return { heroId: u.heroId, xp, before, after: before + xp };
   });
