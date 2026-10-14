@@ -15,6 +15,7 @@ import {
   RULES,
   sideThreat,
   threatTiles,
+  aliveUnits,
   unitAt,
   validTargets,
   type Deployment,
@@ -150,6 +151,7 @@ export class Game {
   private commandLog: Command[] = [];
   private matchEvents: BattleEvent[] = [];
   private ultReady = new Set<string>();
+  private exposures: { unitId: string; round: number; count: number }[] = [];
   private suggestion: Map<string, HighlightKind> | null = null;
   private team: string[] = [];
   private difficulty: Difficulty = 'recruit';
@@ -397,7 +399,7 @@ export class Game {
 
   private insightsHtml(o: MatchOutcome): string {
     if (o.surrendered || this.spec.kind === 'tutorial' || this.spec.kind === 'replay') return '';
-    const tips = analyzeMatch(o.state, this.matchEvents, [...this.ultReady]);
+    const tips = analyzeMatch(o.state, this.matchEvents, [...this.ultReady], this.exposures);
     const title = o.winner === 'player' ? 'O que correu bem e o que afinar' : 'Porque perdi?';
     return `<div class="insights"><div class="eyebrow">${title}</div><ul>${tips.map((t) => `<li>${esc(t.text)}</li>`).join('')}</ul></div>`;
   }
@@ -772,6 +774,7 @@ export class Game {
     this.commandLog = [];
     this.matchEvents = [];
     this.ultReady = new Set();
+    this.exposures = [];
     this.suggestion = null;
     this.renderTutorial();
     this.busy = true;
@@ -867,13 +870,25 @@ export class Game {
     await this.play(events);
   }
 
+  /** After a player hero ends its turn: how many enemies can reach it next turn? */
+  private recordExposure(unitId: string) {
+    const u = getUnit(this.state, unitId);
+    if (!u.alive || u.side !== 'player') return;
+    const key = posKey(u.pos);
+    const count = aliveUnits(this.state, 'enemy').filter((e) => threatTiles(this.state, e.id).some((p) => posKey(p) === key)).length;
+    const fragile = getHero(u.heroId).heroClass !== 'warrior';
+    if (count >= (fragile ? 2 : 3)) this.exposures.push({ unitId, round: this.state.round, count });
+  }
+
   private async exec(cmd: Command) {
     if (this.busy) return;
+    const actor = this.state.active?.unitId;
     this.busy = true;
     this.view.setHighlights(new Map());
     this.view.showPreview([]);
     this.view.setCursor(null);
     await this.applyAndPlay(cmd);
+    if (actor && this.state.active?.unitId !== actor) this.recordExposure(actor);
     this.busy = false;
     this.mode = { kind: 'idle' };
     await this.advance();
