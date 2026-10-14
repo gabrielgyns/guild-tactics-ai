@@ -11,6 +11,7 @@ import {
   terrainAt,
 } from './board';
 import { elementMultiplier } from './elements';
+import { BOND_ATTACK, BOND_GUARD } from './progression';
 import { findAbility, getHero, heroAbilities } from './heroes';
 import type {
   Ability,
@@ -62,6 +63,8 @@ export interface Deployment {
   hp?: number;
   energy?: number;
   shield?: number;
+  /** Bond levels with allied heroes (heroId → 1..3). */
+  bonds?: Record<string, number>;
 }
 
 export function deployedStats(d: Deployment): Stats {
@@ -95,6 +98,7 @@ export function createBattle(board: Board, player: Deployment[], enemy: Deployme
       statuses: [],
       cooldowns: {},
       combat: { damageDealt: 0, damageTaken: 0, healingDone: 0, kills: 0 },
+      bonds: d.bonds ? { ...d.bonds } : undefined,
     });
   };
   player.forEach((d, i) => add('player', d, i));
@@ -392,6 +396,25 @@ export function computeDamage(
   if (flankers > 0) {
     dmg *= 1 + RULES.flankBonusPerAlly * flankers;
     tags.push('flank');
+  }
+  // Bonds: a bonded ally next to the attacker hits harder; next to the target, softens the blow.
+  const bondNear = (u: Unit) =>
+    Math.max(
+      0,
+      ...neighbors(s.board, u.pos)
+        .map((p) => unitAt(s, p))
+        .filter((o): o is Unit => !!o && o.side === u.side && o.id !== u.id)
+        .map((o) => u.bonds?.[o.heroId] ?? 0),
+    );
+  const atkBond = bondNear(attacker);
+  if (atkBond) {
+    dmg *= 1 + BOND_ATTACK[atkBond];
+    tags.push('bond');
+  }
+  const defBond = bondNear(target);
+  if (defBond) {
+    dmg *= 1 - BOND_GUARD[defBond];
+    tags.push('bondGuard');
   }
   const mark = statusAmount(target, 'mark');
   if (mark) {

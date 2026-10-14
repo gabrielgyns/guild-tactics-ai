@@ -129,6 +129,8 @@ export interface Unit {
   statuses: StatusInstance[];
   cooldowns: Record<string, number>;
   combat: CombatStats;
+  /** Bond level (1–3) with allied heroes, by their heroId. */
+  bonds?: Record<string, number>;
 }
 
 export interface ActiveTurn {
@@ -178,7 +180,9 @@ export type DamageTag =
   | 'collision'
   | 'burn'
   | 'advantage'
-  | 'resisted';
+  | 'resisted'
+  | 'bond'
+  | 'bondGuard';
 
 export type BattleEvent =
   | { type: 'roundStart'; round: number }

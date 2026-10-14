@@ -40,6 +40,19 @@ import { isWalkable } from '../domain/board';
 import { mulberry32 } from '../domain/rng';
 import { renderGuildHall } from '../render/models';
 import { teamTraits } from '../domain/traits';
+import { chooseSpec, itemStats, loadBonds, loadInventory, loadSpecs, saveInventory } from './loadout';
+import {
+  bondKey,
+  bondLevel,
+  BOND_LEVELS,
+  RARITY_LABEL,
+  SELL_PRICE,
+  SLOT_LABEL,
+  SPEC_LEVEL,
+  specializationsFor,
+  type Slot,
+} from '../domain/progression';
+import { addGold } from './profile';
 import { BADGE, chooseSkin, LEVEL_REWARD, LEVEL_XP, levelFor, levelProgress, SKINS, skinOf } from './mastery';
 import { PUZZLES, type Puzzle } from '../domain/puzzles';
 import type { Stats } from '../domain/types';
@@ -73,6 +86,7 @@ export class Modes {
   private draft: DraftState = newDraft();
   private abandonArmed = false;
   private hallKey = '';
+  private equipPicker: { heroId: string; slot: Slot } | null = null;
   private hallUrl = '';
 
   constructor(
@@ -369,7 +383,10 @@ export class Modes {
 
   private afterStage(e: ExpeditionState, o: MatchOutcome) {
     const next = recordBattle(e, o.state);
-    if (o.winner === 'player') this.game.awardGold(GOLD.expeditionStage + (next.status === 'won' ? GOLD.expeditionWin : 0), next.status === 'won' ? 'expedição conquistada' : 'etapa vencida');
+    if (o.winner === 'player') {
+      this.game.awardGold(GOLD.expeditionStage + (next.status === 'won' ? GOLD.expeditionWin : 0), next.status === 'won' ? 'expedição conquistada' : 'etapa vencida');
+      this.game.awardLoot(next.status === 'won' ? 1 : e.stage * 0.15);
+    }
     if (next.status !== 'active') this.finishRun(next);
     else save('expedition', next);
     const won = o.winner === 'player';
@@ -424,7 +441,10 @@ export class Modes {
         const rec = load<DailyRecord>('daily', { results: {} });
         const prev = rec.results[d.date];
         const won = o.winner === 'player';
-        if (won && !prev?.won) this.game.awardGold(GOLD.dailyFirstWin, 'primeira vitória do dia');
+        if (won && !prev?.won) {
+          this.game.awardGold(GOLD.dailyFirstWin, 'primeira vitória do dia');
+          this.game.awardLoot(0.6);
+        }
         if (!prev || (won && (!prev.won || o.state.round < prev.rounds))) rec.results[d.date] = { won, rounds: o.state.round };
         save('daily', rec);
         this.game.showResult(o, {
@@ -611,6 +631,10 @@ export class Modes {
 
   private showCollection(focus?: string) {
     const m = this.game.masteryProfile;
+    const specs = loadSpecs();
+    const inv = loadInventory();
+    const bonds = loadBonds();
+    const ownerOf = (itemId: string) => Object.entries(inv.equipped).find(([, s]) => Object.values(s).includes(itemId))?.[0];
     const cards = HEROES.map((h) => {
       const xp = m.xp[h.id] ?? 0;
       const prog = levelProgress(xp);
@@ -626,6 +650,40 @@ export class Modes {
         .map((a) => `<li><b>${esc(a.name)}</b>${a.ultimate ? ' <span class="q">supremo</span>' : a.quick ? ' <span class="q">rápida</span>' : ''} — ${esc(a.description.replace(/^Supremo: /, ''))}</li>`)
         .join('');
       const next = prog.level < LEVEL_XP.length ? `${prog.into}/${prog.span} XP para o nível ${prog.level + 1}: ${LEVEL_REWARD[prog.level + 1]}` : 'Nível máximo';
+      const specOptions = specializationsFor(h.id)
+        .map(
+          (sp) => `<button class="spec${specs[h.id] === sp.id ? ' on' : ''}" data-spec="${sp.id}" data-hero="${h.id}" ${prog.level >= SPEC_LEVEL ? '' : 'disabled'}>
+            <b>${esc(sp.name)}</b><span>${esc(sp.description)}</span></button>`,
+        )
+        .join('');
+      const eq = (inv.equipped[h.id] ?? {}) as Partial<Record<Slot, string>>;
+      const slots = (['weapon', 'armor', 'charm'] as Slot[])
+        .map((slot) => {
+          const item = inv.items.find((i) => i.id === eq[slot]);
+          const open = this.equipPicker?.heroId === h.id && this.equipPicker.slot === slot;
+          const choices = open
+            ? inv.items
+                .filter((i) => i.slot === slot && (!ownerOf(i.id) || ownerOf(i.id) === h.id))
+                .map((i) => `<button class="pick-item" data-equip="${i.id}" data-hero="${h.id}" data-slot="${slot}"><b class="rar-${i.rarity}">${esc(i.name)}</b> <span class="muted">${itemStats(i)}</span></button>`)
+                .join('') || '<span class="muted">Sem itens deste tipo. Ganha espólio na Expedição, Arena e desafio diário.</span>'
+            : '';
+          return `<div class="eq-slot">
+            <button class="eq-btn" data-slotpick="${slot}" data-hero="${h.id}"><span class="eyebrow">${SLOT_LABEL[slot]}</span>${item ? `<b class="rar-${item.rarity}">${esc(item.name)}</b><span class="muted">${itemStats(item)}</span>` : '<span class="muted">vazio</span>'}</button>
+            ${open ? `<div class="eq-choices">${choices}${item ? `<button class="pick-item" data-unequip="${slot}" data-hero="${h.id}">Tirar</button>` : ''}</div>` : ''}
+          </div>`;
+        })
+        .join('');
+      const bondRows = HEROES.filter((o) => o.id !== h.id)
+        .map((o) => ({ o, pts: bonds[bondKey(h.id, o.id)] ?? 0 }))
+        .filter((x) => x.pts > 0)
+        .sort((a, b) => b.pts - a.pts)
+        .slice(0, 4)
+        .map(({ o, pts }) => {
+          const lv = bondLevel(pts);
+          const next = BOND_LEVELS[lv + 1];
+          return `<li><b>${esc(o.name)}</b> ${lv ? `vínculo ${BOND_LEVELS[lv].name}` : 'sem vínculo'} <span class="muted">${pts}${next ? `/${next.points}` : ''} pts</span></li>`;
+        })
+        .join('');
       return `<article class="coll-card" id="coll-${h.id}">
         <div class="coll-head">
           <img alt="" src="${this.game.portrait(h.id)}" />
@@ -638,6 +696,9 @@ export class Modes {
         </div>
         <div class="stats num"><span>PV<b>${h.stats.maxHp}</b></span><span>ATQ<b>${h.stats.atk}</b></span><span>DEF<b>${h.stats.def}</b></span><span>MOV<b>${h.stats.mov}</b></span><span>VEL<b>${h.stats.spd}</b></span></div>
         <ul class="coll-abil">${abilities}</ul>
+        <div><div class="eyebrow">Especialização ${prog.level >= SPEC_LEVEL ? '' : `· desbloqueia no nível ${SPEC_LEVEL}`}</div><div class="specs">${specOptions}</div></div>
+        <div><div class="eyebrow">Equipamento</div><div class="eq">${slots}</div></div>
+        <div><div class="eyebrow">Vínculos</div><ul class="bonds">${bondRows || '<li class="muted">Luta ao lado de outros heróis: cada partida juntos aproxima-os (C → B → A).</li>'}</ul></div>
         <div class="skins">${skins}</div>
       </article>`;
     }).join('');
@@ -651,9 +712,20 @@ export class Modes {
           <button class="btn ghost back-btn" id="co-back">‹ Salão</button>
           <div class="eyebrow">A tua guilda</div>
           <h1 class="page-title">Coleção</h1>
-          <p class="tagline">Cada partida dá XP aos heróis que lutaram (mais por vitória, abates e MVP). A maestria só desbloqueia visuais e insígnias: nunca dá vantagem em combate.</p>
+          <p class="tagline">Cada partida dá XP aos heróis que lutaram. A maestria desbloqueia visuais, insígnias e, no nível ${SPEC_LEVEL}, uma especialização (troca vantagens por custos). Equipamento e vínculos dão bónus moderados em todos os modos menos no desafio diário, treino e puzzles.</p>
         </div>
         <details class="howto"><summary>Traços de guilda</summary><ul class="trait-ref">${traitRef}<li><b>Sintonia</b> — 2+ heróis do mesmo elemento: +1 ATQ e +3 PV (3+: +2 ATQ e +6 PV).</li></ul></details>
+        <details class="howto"><summary>Inventário (${inv.items.length})</summary>
+          <ul class="inventory">${
+            inv.items
+              .map((i) => {
+                const owner = ownerOf(i.id);
+                return `<li><span class="chip">${SLOT_LABEL[i.slot]}</span> <b class="rar-${i.rarity}">${esc(i.name)}</b> <span class="muted">${RARITY_LABEL[i.rarity]} · ${itemStats(i)}${owner ? ` · com ${esc(getHero(owner).name)}` : ''}</span>
+                ${owner ? '' : `<button class="btn ghost" data-sell="${i.id}">Vender por ${SELL_PRICE[i.rarity]}</button>`}</li>`;
+              })
+              .join('') || '<li class="muted">Vazio. O espólio aparece no fim das vitórias.</li>'
+          }</ul>
+        </details>
         <div class="coll-grid">${cards}</div>
       </div>`);
     this.on('#co-back', () => this.showHub());
@@ -663,6 +735,58 @@ export class Modes {
         this.game.refreshMastery();
         audio.play('click');
         this.showCollection(b.dataset.hero);
+      }),
+    );
+    const redraw = (heroId?: string) => {
+      this.game.refreshMastery();
+      this.showCollection(heroId);
+    };
+    this.el.querySelectorAll<HTMLElement>('[data-spec]').forEach((b) =>
+      b.addEventListener('click', () => {
+        chooseSpec(b.dataset.hero!, b.dataset.spec!);
+        audio.play('shield');
+        redraw(b.dataset.hero);
+      }),
+    );
+    this.el.querySelectorAll<HTMLElement>('[data-slotpick]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const key = { heroId: b.dataset.hero!, slot: b.dataset.slotpick as Slot };
+        const same = this.equipPicker?.heroId === key.heroId && this.equipPicker.slot === key.slot;
+        this.equipPicker = same ? null : key;
+        redraw(key.heroId);
+      }),
+    );
+    this.el.querySelectorAll<HTMLElement>('[data-equip]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const cur = loadInventory();
+        cur.equipped[b.dataset.hero!] = { ...(cur.equipped[b.dataset.hero!] ?? {}), [b.dataset.slot!]: b.dataset.equip! };
+        saveInventory(cur);
+        this.equipPicker = null;
+        audio.play('click');
+        redraw(b.dataset.hero);
+      }),
+    );
+    this.el.querySelectorAll<HTMLElement>('[data-unequip]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const cur = loadInventory();
+        const slots = { ...(cur.equipped[b.dataset.hero!] ?? {}) };
+        delete slots[b.dataset.unequip as Slot];
+        cur.equipped[b.dataset.hero!] = slots;
+        saveInventory(cur);
+        this.equipPicker = null;
+        redraw(b.dataset.hero);
+      }),
+    );
+    this.el.querySelectorAll<HTMLElement>('[data-sell]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const cur = loadInventory();
+        const item = cur.items.find((i) => i.id === b.dataset.sell);
+        if (!item) return;
+        cur.items = cur.items.filter((i) => i.id !== item.id);
+        saveInventory(cur);
+        addGold(SELL_PRICE[item.rarity]);
+        audio.play('heal');
+        redraw();
       }),
     );
     if (focus) this.el.querySelector(`#coll-${focus}`)?.scrollIntoView({ block: 'center' });
@@ -970,6 +1094,7 @@ export class Modes {
     const won = o.winner === 'player';
     let sub = '';
     if (!o.surrendered) this.game.awardGold(won ? GOLD.arenaWin : GOLD.arenaLoss, won ? 'vitória na Arena' : 'participação');
+    if (won) this.game.awardLoot(0.3);
     if (kind === 'ladder') {
       const a = this.arena();
       const delta = eloDelta(a.rating, rivalRating, won);

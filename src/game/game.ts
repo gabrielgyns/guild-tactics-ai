@@ -31,6 +31,7 @@ import { renderPortrait, renderPortraits } from '../render/models';
 import { applyTraits, teamTraits, type Trait } from '../domain/traits';
 import { masteryMultiplier, GOLD } from '../domain/fortress';
 import { addGold, loadFortress, loadRaw, save } from './profile';
+import { applyLoadout, awardBonds, awardItem } from './loadout';
 import { awardMastery, BADGE, levelFor, loadMastery, masteryHtml, skinOf, type MasteryProfile, type Skin } from './mastery';
 import { audio, type Sfx } from '../ui/audio';
 import { TUTORIAL_ENEMY, TUTORIAL_MAP, TUTORIAL_PLAYER, TUTORIAL_STEPS } from './tutorial';
@@ -430,12 +431,18 @@ export class Game {
     });
   }
 
+  /** Rolls an equipment drop into the inventory and lists it on the result screen. */
+  awardLoot(luck = 0) {
+    this.lastGoldHtml += awardItem(luck);
+  }
+
   /** Adds gold to the fortress treasury and lists it on the result screen. */
   awardGold(amount: number, reason: string) {
     if (amount <= 0) return;
     const f = addGold(amount);
     this.goldThisMatch += amount;
-    this.lastGoldHtml = `<div class="gold-gain">🪙 +${this.goldThisMatch} de ouro <span class="muted">(${esc(reason)}) · tesouro: ${f.gold}</span></div>`;
+    const loot = this.lastGoldHtml.split('<div class="gold-gain">🎁').slice(1).map((x) => '<div class="gold-gain">🎁' + x).join('');
+    this.lastGoldHtml = `<div class="gold-gain">🪙 +${this.goldThisMatch} de ouro <span class="muted">(${esc(reason)}) · tesouro: ${f.gold}</span></div>${loot}`;
   }
 
   recordSummary() {
@@ -598,7 +605,9 @@ export class Game {
     // Guild traits apply to both sides, except in scripted modes where numbers are hand-tuned.
     const traits = spec.kind !== 'tutorial' && spec.kind !== 'puzzle' && !spec.prepared;
     const prep = (team: Deployment[]) => (traits ? applyTraits(team) : team).map((d) => ({ ...d, pos: { ...d.pos } }));
-    this.playerDeploy = prep(spec.player);
+    // The player's own heroes bring their specialization, equipment and bonds (not in fixed-team modes).
+    const loadout = traits && spec.kind !== 'daily';
+    this.playerDeploy = prep(loadout ? applyLoadout(spec.player) : spec.player);
     this.enemyDeploy = prep(spec.enemy);
     this.lastMasteryHtml = '';
     this.lastGoldHtml = '';
@@ -1354,10 +1363,13 @@ export class Game {
     }
     audio.play(won ? 'victory' : 'defeat');
     if (!surrendered && this.spec.kind !== 'tutorial' && this.spec.kind !== 'puzzle') {
-      this.lastMasteryHtml = masteryHtml(awardMastery(s, masteryMultiplier(loadFortress())));
+      this.lastMasteryHtml = masteryHtml(awardMastery(s, masteryMultiplier(loadFortress()))) + awardBonds(s);
       this.refreshMastery();
     }
-    if (!surrendered && this.spec.kind === 'quick') this.awardGold(won ? GOLD.matchWin : GOLD.matchLoss, won ? 'vitória' : 'participação');
+    if (!surrendered && this.spec.kind === 'quick') {
+      this.awardGold(won ? GOLD.matchWin : GOLD.matchLoss, won ? 'vitória' : 'participação');
+      if (won && Math.random() < 0.5) this.awardLoot(0);
+    }
     if (!surrendered) {
       this.banner(won ? 'Vitória' : draw ? 'Empate' : 'Derrota', '', won ? 'player' : 'enemy');
       await this.view.wait(1100);
