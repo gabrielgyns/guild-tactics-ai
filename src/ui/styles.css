@@ -1439,3 +1439,25 @@ table.stats-table {
 
 .stats-table.ladder th:nth-child(2), .stats-table.ladder td:nth-child(2),
 .stats-table.ladder th:nth-child(4), .stats-table.ladder td:nth-child(4) { text-align: left; }
+
+/* ---------------------------------------------------------- specializations, equipment, bonds */
+.specs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 4px; }
+.spec { appearance: none; text-align: left; display: grid; gap: 2px; padding: 7px 8px; border: 1px solid var(--line); border-radius: var(--radius); background: #121a22; cursor: pointer; font-size: 12.5px; color: #c9d1d8; }
+.spec b { font-family: var(--font-cond); font-size: 14px; color: var(--parchment); }
+.spec.on { border-color: var(--brass); background: #2a2416; }
+.spec:disabled { opacity: 0.5; cursor: not-allowed; }
+.eq { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 4px; }
+.eq-slot { display: grid; gap: 4px; min-width: 0; }
+.eq-btn { appearance: none; text-align: left; display: grid; gap: 2px; padding: 6px; border: 1px dashed var(--line-hi); border-radius: var(--radius); background: #121a22; cursor: pointer; font-size: 12px; min-height: 52px; color: var(--parchment); }
+.eq-btn b { font-size: 12.5px; }
+.eq-choices { grid-column: 1 / -1; display: grid; gap: 4px; }
+.eq-slot:has(.eq-choices) { grid-column: 1 / -1; }
+.pick-item { appearance: none; text-align: left; padding: 5px 7px; border: 1px solid var(--line); border-radius: var(--radius); background: #18222c; cursor: pointer; font-size: 12.5px; color: var(--parchment); }
+.pick-item:hover { border-color: var(--brass); }
+.rar-common { color: var(--parchment); }
+.rar-rare { color: #7fc8ff; }
+.rar-epic { color: #d6a8ff; }
+.bonds, .inventory { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 4px; font-size: 13px; }
+.inventory { margin-bottom: 12px; }
+.inventory li { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.inventory .btn { padding: 3px 8px; font-size: 12px; }

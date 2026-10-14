@@ -141,8 +141,14 @@ Calculados a partir da composição; valem para os dois lados (exceto treino e p
 | Sintonia (elemento) | 2+ do mesmo elemento | esses heróis +1 ATQ e +3 PV (3+: +2 ATQ e +6 PV) |
 | Crepúsculo | Luz e Sombra juntas | esses heróis +2 ATQ |
 
-### Maestria (cosmética)
-Cada partida dá XP aos heróis que lutaram: 20 + 20 por vitória + 4 por abate + 10 para o MVP. Níveis aos 60 / 150 / 280 / 450 XP desbloqueiam insígnias (bronze, prata, ouro) e visuais (Veterano no nível 3, Lendário no nível 5). Nunca dá vantagem em combate, alinhado com a monetização pretendida (cosméticos, sem pagar para ganhar).
+### Vínculos, especializações e equipamento
+- **Vínculos** (à Fire Emblem): cada par de heróis que luta junto ganha 1 ponto (+1 se vencerem, +1 se ambos sobreviverem). Níveis C / B / A aos 3 / 8 / 15 pontos. Em combate, um aliado com vínculo encostado dá +5 / 10 / 15% de dano a quem ataca e −5 / 8 / 12% de dano a quem é atacado (etiquetas *Vínculo* e *Proteção*). Cada nível novo tem uma linha de história.
+- **Especialização** (evolução de classe, à Pokémon/Fire Emblem): no nível 3 de maestria cada herói escolhe uma de duas, sempre com ganho e custo — Paladino/Berserker, Atirador/Batedor, Arquimago/Sábio, Sacerdote/Estratega.
+- **Equipamento** (à Summoners War): arma, armadura e amuleto, de raridade comum/rara/épica, ganhos como espólio (etapas da Expedição, vitórias na Arena, primeira vitória diária, metade das vitórias rápidas). Vende-se por ouro. O inventário guarda 40 itens.
+- Os três aplicam-se aos teus heróis em partida rápida, draft, Expedição e Arena; nunca no desafio diário (equipas fixas), treino ou puzzles. As defesas da Arena usam heróis base.
+
+### Maestria
+Cada partida dá XP aos heróis que lutaram: 20 + 20 por vitória + 4 por abate + 10 para o MVP. Níveis aos 60 / 150 / 280 / 450 XP desbloqueiam insígnias (bronze, prata, ouro), visuais (Veterano no nível 3, Lendário no nível 5) e a especialização (nível 3). Tudo se ganha a jogar: nada disto é vendável, alinhado com a monetização pretendida (cosméticos, sem pagar para ganhar).
 
 ## 6. Modos de jogo
 
@@ -207,6 +213,6 @@ Ordem proposta (de trás para a frente: cada camada só entra se a anterior pren
 
 1. **Clareza e profundidade do combate** — zona de ameaça ✅, energia e supremos ✅, elementos ✅, santuários (objetivo de mapa) ✅, tutorial guiado ✅, som e zoom ✅.
 2. **Rejogabilidade** — modo Expedição ✅, desafio diário ✅, draft com bloqueios ✅, puzzles táticos ✅, Salão da Guilda (menu) ✅.
-3. **Coleção e identidade** — 12 heróis ✅, traços de guilda ✅, maestria com insígnias e visuais ✅, ecrã de Coleção ✅, fortaleza voxel no Salão ✅. A seguir: vínculos entre heróis, evolução de classe, equipamento.
+3. **Coleção e identidade** — 12 heróis ✅, traços de guilda ✅, maestria com insígnias e visuais ✅, ecrã de Coleção ✅, fortaleza voxel no Salão ✅. Vínculos entre heróis ✅, especializações (evolução de classe) ✅, equipamento com espólio e inventário ✅.
 4. **Fortaleza da guilda** — ouro, 6 edifícios com níveis, mina em tempo real, maquete voxel ✅.
 5. **PvP assíncrono e guildas** — identidade da guilda (nome e estandarte) ✅, defesas partilháveis por código ✅, liga semanal com Elo e recompensas ✅, guerra de guilda ✅, replays ✅, combate automático ✅. Próximo passo natural: um servidor (ou armazenamento partilhado) para que as defesas circulem sem copiar códigos e as guerras sejam entre guildas reais.

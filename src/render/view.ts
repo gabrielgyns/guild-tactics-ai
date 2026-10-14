@@ -52,6 +52,8 @@ export const TAG_LABEL: Record<DamageTag, string> = {
   burn: 'Queimadura',
   advantage: 'Vantagem',
   resisted: 'Resistido',
+  bond: 'Vínculo',
+  bondGuard: 'Proteção',
 };
 
 interface Tween {
