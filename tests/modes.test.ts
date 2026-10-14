@@ -6,6 +6,7 @@ import { autoDeploy } from '../src/domain/deploy';
 import { aiDraftPick, available, draftPick, draftSide, newDraft } from '../src/domain/draft';
 import {
   EXPEDITION_STAGES,
+  REST_HEAL,
   chooseReward,
   enemyTeamForBattle,
   heroMaxHp,
@@ -45,7 +46,7 @@ describe('expedition', () => {
     expect(next.stage).toBe(1);
     expect(next.roster.find((h) => h.heroId === 'mira')!.fallen).toBe(true);
     const brann = next.roster.find((h) => h.heroId === 'brann')!;
-    expect(brann.hp).toBe(10 + Math.round(heroMaxHp(next, brann) * 0.2));
+    expect(brann.hp).toBe(10 + Math.round(heroMaxHp(next, brann) * REST_HEAL));
     expect(next.rewards).toHaveLength(3);
     // With someone fallen, revive or recruit should be on offer.
     expect(next.rewards!.some((r) => r.kind === 'revive' || r.kind === 'recruit')).toBe(true);

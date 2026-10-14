@@ -9,7 +9,7 @@ import type { BattleState, HeroClass, Stats } from './types';
 
 export const EXPEDITION_STAGES = 5;
 /** Share of max HP every survivor recovers between battles. */
-export const REST_HEAL = 0.2;
+export const REST_HEAL = 0.35;
 
 export interface ExpeditionHero {
   heroId: string;
@@ -22,6 +22,8 @@ export interface StageDef {
   name: string;
   mapId: string;
   elite: boolean;
+  /** AI sloppiness for this stage: early stages play looser, the finale plays sharp. */
+  aiNoise: number;
   enemies: { heroId: string; bonus: Partial<Stats> }[];
 }
 
@@ -46,7 +48,17 @@ export interface ExpeditionState {
   /** Rewards on offer after a win; null when none are pending. */
   rewards: Reward[] | null;
   battlesWon: number;
+  /** Fortress bonuses locked in when the run started. */
+  perks?: ExpeditionPerks;
 }
+
+export interface ExpeditionPerks {
+  restHealBonus: number;
+  startRelics: number;
+  rewardCount: number;
+}
+
+const NO_PERKS: ExpeditionPerks = { restHealBonus: 0, startRelics: 0, rewardCount: 3 };
 
 // ---------------------------------------------------------------- relics
 
@@ -85,31 +97,42 @@ function addStats(a: Partial<Stats>, b: Partial<Stats>): Partial<Stats> {
 function makeStage(rng: Rng, index: number, avoid: string[]): StageDef {
   const elite = index === EXPEDITION_STAGES - 1;
   // Enemies get stronger every stage; the final one is an elite squad.
+  // Stage 1 is a warm-up (weaker than a normal squad); the finale is an elite squad.
   const scale: Partial<Stats> = {
-    atk: index,
-    maxHp: index * 3 + (elite ? 8 : 0),
-    def: Math.floor(index / 2),
+    atk: index - 3 + (elite ? 1 : 0),
+    maxHp: (index - 2) * 3 + (elite ? 6 : 0),
   };
   const enemies = CLASSES.map((c) => {
     const pool = shuffled(rng, HEROES.filter((h) => h.heroClass === c));
     return (pool.find((h) => !avoid.includes(h.id)) ?? pool[0]).id;
   }).map((heroId) => ({ heroId, bonus: scale }));
-  return { name: STAGE_NAMES[index], mapId: pick(rng, MAPS).id, elite, enemies };
+  return { name: STAGE_NAMES[index], mapId: pick(rng, MAPS).id, elite, aiNoise: Math.max(1.5, 6 - index * 1.2), enemies };
 }
 
-export function startExpedition(team: string[], seed = Math.floor(Math.random() * 2 ** 31)): ExpeditionState {
+export function startExpedition(
+  team: string[],
+  seed = Math.floor(Math.random() * 2 ** 31),
+  perks: ExpeditionPerks = NO_PERKS,
+): ExpeditionState {
   const rng = mulberry32(seed);
   const stages = Array.from({ length: EXPEDITION_STAGES }, (_, i) => makeStage(rng, i, team));
-  return {
+  const relics = shuffled(rng, RELICS)
+    .slice(0, perks.startRelics)
+    .map((r) => r.id);
+  const state: ExpeditionState = {
     seed,
     stage: 0,
     stages,
     roster: team.map((heroId) => ({ heroId, hp: getHero(heroId).stats.maxHp, bonus: {}, fallen: false })),
-    relics: [],
+    relics,
     status: 'active',
     rewards: null,
     battlesWon: 0,
+    perks,
   };
+  // Starting HP relics count from the first battle.
+  for (const h of state.roster) h.hp = heroMaxHp(state, h);
+  return state;
 }
 
 // ---------------------------------------------------------------- derived stats
@@ -157,7 +180,7 @@ export function recordBattle(e: ExpeditionState, result: BattleState, rng: Rng =
     if (!u.alive) {
       h.fallen = true;
       h.hp = 0;
-    } else h.hp = Math.min(max, u.hp + Math.round(max * REST_HEAL));
+    } else h.hp = Math.min(max, u.hp + Math.round(max * (REST_HEAL + (next.perks?.restHealBonus ?? 0))));
   }
   next.battlesWon += 1;
   next.stage += 1;
@@ -195,10 +218,15 @@ export function offerRewards(e: ExpeditionState, rng: Rng): Reward[] {
   if (hurt || options.length < 3)
     options.push({ id: 'rest', kind: 'rest', title: 'Acampamento', description: 'Todos os heróis de pé recuperam 60% da vida que lhes falta.' });
 
-  if (options.length < 3 && relics[1])
+  const count = e.perks?.rewardCount ?? 3;
+  if (options.length < count && relics[1])
     options.push({ id: `relic:${relics[1].id}`, kind: 'relic', relicId: relics[1].id, title: relics[1].name, description: relics[1].description });
-
-  return options.slice(0, 3);
+  const second = alive.find((h) => h.heroId !== trainee?.heroId);
+  if (options.length < count && second) {
+    const name = getHero(second.heroId).name;
+    options.push({ id: `train:${second.heroId}`, kind: 'train', heroId: second.heroId, title: `Treinar ${name}`, description: `${name} ganha +2 ATQ e +5 PV máximos (e cura esses 5).` });
+  }
+  return options.slice(0, count);
 }
 
 export function chooseReward(e: ExpeditionState, rewardId: string): ExpeditionState {

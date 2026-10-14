@@ -150,12 +150,29 @@ O **Salão da Guilda** (menu principal) dá acesso a todos os modos. Todos usam 
 
 | Modo | Regras | Código |
 | --- | --- | --- |
-| **Expedição** | 5 combates seguidos com inimigos cada vez mais fortes (+1 ATQ e +3 PV por etapa; a 5.ª é elite). A vida passa de combate para combate (+20% de descanso). Depois de cada vitória escolhes 1 de 3 recompensas: relíquia (bónus para a equipa), treino (+2 ATQ, +5 PV a um herói), acampamento, ritual (reviver caídos) ou recruta (substitui um caído). Perder um combate termina a expedição. A expedição em curso fica guardada no browser. | `src/domain/expedition.ts` |
+| **Expedição** | 5 combates seguidos: a etapa 1 é um aquecimento (inimigos −3 ATQ), a força sobe 1 ATQ e 3 PV por etapa e a 5.ª é elite; a IA inimiga começa desajeitada e fica afiada. A vida passa de combate para combate (+35% de descanso). Teste ponta a ponta (`tests/expedition-e2e.test.ts`): uma IA que joga bem conquista ~1 em cada 3 expedições. Depois de cada vitória escolhes 1 de 3 recompensas: relíquia (bónus para a equipa), treino (+2 ATQ, +5 PV a um herói), acampamento, ritual (reviver caídos) ou recruta (substitui um caído). Perder um combate termina a expedição. A expedição em curso fica guardada no browser. | `src/domain/expedition.ts` |
 | **Desafio diário** | Mapa, equipas e modificador gerados a partir da data: iguais para todos no mesmo dia. Guarda a melhor vitória (menos rondas). | `src/domain/daily.ts` |
 | **Partida rápida** | Escolhe 4 heróis contra uma equipa aleatória (uma de cada classe). | — |
 | **Draft** | Cada lado bloqueia um herói; depois escolhas alternadas 1-2-2-2-1 de um conjunto comum. A IA cobre classes em falta, procura vantagem elemental e bloqueia o herói que mais ajudaria o jogador. | `src/domain/draft.ts` |
 | **Puzzles** | Situações fixas para vencer numa só ronda. Um solucionador exaustivo (`solvePuzzle`) prova que cada um tem solução e que a ideia-chave é necessária (`scripts/puzzle-idea.ts`). | `src/domain/puzzles.ts` |
 | **Treino** | Combate guiado de 2 contra 2 em 8 passos. | `src/game/tutorial.ts` |
+| **Arena das Guildas** | PvP assíncrono: atacas defesas (4 heróis + formação + mapa) jogadas pela IA. Liga semanal com 7 guildas rivais e pontuação Elo; no fim da semana, ouro por escalão (Bronze/Prata/Ouro/Diamante) e os pontos aproximam-se de 1000. Guerra de guilda semanal: 3 frentes, ganha quem conquistar 2. Amigos: a tua defesa vira um código `GT1-…` que outra pessoa cola na Arena dela para te desafiar. | `src/domain/arena.ts` |
+
+Em todos os combates há **AUTO** (tecla A): a IA joga também os teus turnos, ao estilo dos RPG de coleção. Cada partida fica guardada como **replay** (as regras são determinísticas, por isso basta guardar as posições iniciais e a lista de comandos).
+
+### Fortaleza (camada de base)
+Ouro ganho em todos os modos (vitória 40, derrota 15, etapa de Expedição 30, Expedição conquistada +150, primeira vitória diária 60, puzzle novo 50, Arena 50/15, guerra de guilda 200, fim de temporada 80–400).
+
+| Edifício | Níveis | Efeito |
+| --- | --- | --- |
+| Torre de Menagem | 3 | limita o nível dos outros edifícios |
+| Mina de Ouro | 3 | 30 / 60 / 100 de ouro por hora, guarda até 8 h — produz mesmo sem jogar |
+| Quartel | 3 | +15 / 30 / 50% de XP de maestria |
+| Enfermaria | 3 | descanso da Expedição +10 / 20 / 30% |
+| Forja | 2 | Expedições começam com 1 / 2 relíquias |
+| Sala dos Mapas | 1 | 4 recompensas por vitória na Expedição |
+
+Os edifícios só ajudam PvE e progressão; nunca alteram números da Arena. A maquete voxel da fortaleza mostra cada edifício construído e o estandarte da guilda.
 
 ## 7. Primeira leitura de equilíbrio
 
@@ -191,5 +208,5 @@ Ordem proposta (de trás para a frente: cada camada só entra se a anterior pren
 1. **Clareza e profundidade do combate** — zona de ameaça ✅, energia e supremos ✅, elementos ✅, santuários (objetivo de mapa) ✅, tutorial guiado ✅, som e zoom ✅.
 2. **Rejogabilidade** — modo Expedição ✅, desafio diário ✅, draft com bloqueios ✅, puzzles táticos ✅, Salão da Guilda (menu) ✅.
 3. **Coleção e identidade** — 12 heróis ✅, traços de guilda ✅, maestria com insígnias e visuais ✅, ecrã de Coleção ✅, fortaleza voxel no Salão ✅. A seguir: vínculos entre heróis, evolução de classe, equipamento.
-4. **Fortaleza da guilda** — base com edifícios que dão recursos e melhorias.
-5. **PvP assíncrono e guildas** — defesas, ranking por temporada, guerras de guilda. As regras já são puras e determinísticas, por isso uma partida pode ser reproduzida a partir da lista de comandos.
+4. **Fortaleza da guilda** — ouro, 6 edifícios com níveis, mina em tempo real, maquete voxel ✅.
+5. **PvP assíncrono e guildas** — identidade da guilda (nome e estandarte) ✅, defesas partilháveis por código ✅, liga semanal com Elo e recompensas ✅, guerra de guilda ✅, replays ✅, combate automático ✅. Próximo passo natural: um servidor (ou armazenamento partilhado) para que as defesas circulem sem copiar códigos e as guerras sejam entre guildas reais.

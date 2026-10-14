@@ -16,14 +16,47 @@ import {
   type ExpeditionState,
 } from '../domain/expedition';
 import { CLASS_GLYPH, CLASS_LABEL, HEROES, getHero, heroAbilities } from '../domain/heroes';
+import {
+  decodeDefense,
+  defenseCell,
+  defenseDeployments,
+  eloDelta,
+  encodeDefense,
+  generateDefense,
+  seasonKey,
+  seasonRivals,
+  seasonWar,
+  softReset,
+  START_RATING,
+  tierOf,
+  validateDefense,
+  warOutcome,
+  WAR_REWARD,
+  type Defense,
+  type DefenseSlot,
+  type GuildWar,
+} from '../domain/arena';
+import { isWalkable } from '../domain/board';
+import { mulberry32 } from '../domain/rng';
 import { renderGuildHall } from '../render/models';
 import { teamTraits } from '../domain/traits';
 import { BADGE, chooseSkin, LEVEL_REWARD, LEVEL_XP, levelFor, levelProgress, SKINS, skinOf } from './mastery';
 import { PUZZLES, type Puzzle } from '../domain/puzzles';
 import type { Stats } from '../domain/types';
 import { audio } from '../ui/audio';
-import type { Game, MatchOutcome } from './game';
-import { load, loadRaw, save, type DailyRecord, type ExpeditionRecord, type PuzzleRecord } from './profile';
+import type { Game, MatchOutcome, Replay } from './game';
+import {
+  BUILDINGS,
+  canUpgrade,
+  expeditionPerks,
+  GOLD,
+  MINE_CAP_HOURS,
+  MINE_RATE,
+  minePending,
+  upgrade,
+  type BuildingId,
+} from '../domain/fortress';
+import { collectGold, loadFortress, saveFortress, load, loadRaw, save, type DailyRecord, type ExpeditionRecord, type PuzzleRecord } from './profile';
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
@@ -92,11 +125,13 @@ export class Modes {
     const maxed = HEROES.filter((h) => levelFor(m.xp[h.id] ?? 0) >= 5).length;
     // The keep shows the four heroes with the most mastery (or a default squad).
     const favourites = [...HEROES].sort((a, b) => (m.xp[b.id] ?? 0) - (m.xp[a.id] ?? 0)).slice(0, 4).map((h) => h.id);
-    const hallKey = favourites.map((id) => `${id}:${skinOf(m, id)}`).join(',');
+    const fort = loadFortress();
+    const hallKey = favourites.map((id) => `${id}:${skinOf(m, id)}`).join(',') + JSON.stringify(fort.levels) + this.bannerColor();
     if (hallKey !== this.hallKey) {
       this.hallKey = hallKey;
-      this.hallUrl = renderGuildHall(favourites, (id) => skinOf(m, id));
+      this.hallUrl = renderGuildHall(favourites, (id) => skinOf(m, id), { levels: fort.levels, banner: this.bannerColor() });
     }
+    const pending = minePending(fort, Date.now());
 
     const card = (id: string, eyebrow: string, title: string, body: string, status: string, cta: string, accent = false) => `
       <article class="mode-card${accent ? ' accent' : ''}">
@@ -144,6 +179,23 @@ export class Modes {
           ${card('draft', 'Combate livre', 'Draft', 'Cada lado bloqueia um herói; depois escolhem à vez de um conjunto comum. Cada escolha tira opções ao outro.', '1 bloqueio · ordem 1-2-2-2-1', 'Começar')}
           ${card('puzzles', 'Treino tático', 'Puzzles', 'Situações fixas para resolver num só turno. Ensinam cerco, empurrões, trocas e supremos.', `${puzzles.solved.length} de ${PUZZLES.length} resolvidos`, 'Abrir')}
           ${card('tutorial', tutorialDone ? 'Treino' : 'Começa aqui', 'Campo de Treino', 'Um combate guiado de 2 contra 2 que ensina mover, atacar, elementos, zona de ameaça e supremos.', tutorialDone ? 'Concluído' : '2 minutos', tutorialDone ? 'Repetir' : 'Começar', !tutorialDone)}
+          ${card(
+            'fortress',
+            'A tua base',
+            'Fortaleza',
+            'Gasta ouro em edifícios: uma mina que produz mesmo quando não jogas, quartel, enfermaria, forja e sala dos mapas. Ganhas ouro em todos os modos.',
+            `🪙 ${fort.gold}${pending ? ` · ${pending} à espera na mina` : ''}`,
+            pending ? 'Recolher' : 'Abrir',
+            pending > 0,
+          )}
+          ${card(
+            'arena',
+            `PvP assíncrono · temporada ${seasonKey()}`,
+            'Arena das Guildas',
+            'Ataca as defesas de guildas rivais e de amigos (a IA joga a formação deles), sobe na liga semanal e luta na guerra de guilda.',
+            `${tierOf(this.arena().rating).name} · ${this.arena().rating} pontos`,
+            'Entrar',
+          )}
           ${card('collection', 'A tua guilda', 'Coleção', `${HEROES.length} heróis, traços de guilda e maestria. Cada partida dá XP aos heróis que lutaram; os níveis desbloqueiam insígnias e visuais.`, `${totalXp} XP · ${maxed} herói${maxed === 1 ? '' : 's'} no nível máximo`, 'Abrir')}
           ${this.extraCards()}
         </div>
@@ -156,6 +208,11 @@ export class Modes {
     this.on('[data-mode="puzzles"]', () => this.showPuzzles());
     this.on('[data-mode="tutorial"]', () => this.game.startTutorial());
     this.on('[data-mode="collection"]', () => this.showCollection());
+    this.on('[data-mode="arena"]', () => this.showArena());
+    this.on('[data-mode="fortress"]', () => {
+      if (minePending(loadFortress(), Date.now()) > 0) collectGold();
+      this.showFortress();
+    });
     this.el.querySelectorAll<HTMLElement>('[data-extra]').forEach((n) => n.addEventListener('click', () => this.onExtraCard(n.dataset.extra!)));
   }
 
@@ -171,7 +228,7 @@ export class Modes {
       confirmLabel: 'Partir ›',
       showDifficulty: false,
       onConfirm: (team) => {
-        const fresh = startExpedition(team);
+        const fresh = startExpedition(team, undefined, expeditionPerks(loadFortress()));
         save('expedition', fresh);
         const rec = load<ExpeditionRecord>('expedition-record', { runs: 0, wins: 0, bestStage: 0 });
         save('expedition-record', { ...rec, runs: rec.runs + 1 });
@@ -302,7 +359,7 @@ export class Modes {
       map,
       player: autoDeploy(board, playerTeamForBattle(e), 'player'),
       enemy: autoDeploy(board, enemyTeamForBattle(e), 'enemy'),
-      noise: 3,
+      noise: stage.aiNoise ?? 3,
       deploy: true,
       backLabel: '‹ Expedição',
       onBack: () => this.showExpedition(e),
@@ -312,12 +369,13 @@ export class Modes {
 
   private afterStage(e: ExpeditionState, o: MatchOutcome) {
     const next = recordBattle(e, o.state);
+    if (o.winner === 'player') this.game.awardGold(GOLD.expeditionStage + (next.status === 'won' ? GOLD.expeditionWin : 0), next.status === 'won' ? 'expedição conquistada' : 'etapa vencida');
     if (next.status !== 'active') this.finishRun(next);
     else save('expedition', next);
     const won = o.winner === 'player';
     this.game.showResult(o, {
       title: next.status === 'won' ? 'Expedição conquistada!' : won ? `Etapa ${e.stage + 1} vencida` : 'Expedição perdida',
-      sub: won ? (next.status === 'won' ? 'A guilda regressa em glória.' : 'Os sobreviventes recuperam 20% da vida. Escolhe uma recompensa.') : 'Os heróis recuam. Tenta uma nova expedição.',
+      sub: won ? (next.status === 'won' ? 'A guilda regressa em glória.' : 'Os sobreviventes recuperam 35% da vida. Escolhe uma recompensa.') : 'Os heróis recuam. Tenta uma nova expedição.',
       primary: { label: next.status === 'active' ? 'Escolher recompensa' : 'Ver resumo', fn: () => this.showExpedition(next) },
     });
   }
@@ -366,6 +424,7 @@ export class Modes {
         const rec = load<DailyRecord>('daily', { results: {} });
         const prev = rec.results[d.date];
         const won = o.winner === 'player';
+        if (won && !prev?.won) this.game.awardGold(GOLD.dailyFirstWin, 'primeira vitória do dia');
         if (!prev || (won && (!prev.won || o.state.round < prev.rounds))) rec.results[d.date] = { won, rounds: o.state.round };
         save('daily', rec);
         this.game.showResult(o, {
@@ -472,11 +531,13 @@ export class Modes {
       onBack: () => this.renderDraft(),
       onRematch: () => this.openDraft(),
       countsForRecord: true,
-      onFinish: (o) =>
+      onFinish: (o) => {
+        // Draft runs as a quick match, so the battle screen already paid out gold.
         this.game.showResult(o, {
           primary: { label: 'Novo draft', fn: () => this.openDraft() },
           secondary: { label: 'Salão', fn: () => this.showHub() },
-        }),
+        });
+      },
     });
   }
 
@@ -526,7 +587,10 @@ export class Modes {
         const won = o.winner === 'player';
         if (won) {
           const rec = load<PuzzleRecord>('puzzles', { solved: [] });
-          if (!rec.solved.includes(p.id)) save('puzzles', { solved: [...rec.solved, p.id] });
+          if (!rec.solved.includes(p.id)) {
+            save('puzzles', { solved: [...rec.solved, p.id] });
+            this.game.awardGold(GOLD.puzzleFirstSolve, 'puzzle resolvido pela primeira vez');
+          }
         }
         const nextPuzzle = PUZZLES[idx + 1];
         this.game.showResult(o, {
@@ -603,4 +667,428 @@ export class Modes {
     );
     if (focus) this.el.querySelector(`#coll-${focus}`)?.scrollIntoView({ block: 'center' });
   }
+
+  // =============================================================== fortress
+
+  /** Guild banner colour (set in the arena's guild screen). */
+  bannerColor(): number {
+    return loadRaw<{ color: number }>('guild')?.color ?? 0x4aa3ff;
+  }
+
+  private showFortress() {
+    const now = Date.now();
+    const f = loadFortress(now);
+    const pending = minePending(f, now);
+    const m = this.game.masteryProfile;
+    const favourites = [...HEROES].sort((a, b) => (m.xp[b.id] ?? 0) - (m.xp[a.id] ?? 0)).slice(0, 4).map((h) => h.id);
+    const img = renderGuildHall(favourites, (id) => skinOf(m, id), { levels: f.levels, banner: this.bannerColor(), width: 840, height: 420 });
+    const cards = BUILDINGS.map((b) => {
+      const level = f.levels[b.id];
+      const check = canUpgrade(f, b.id);
+      const maxed = level >= b.maxLevel;
+      const cost = maxed ? 0 : b.costs[level + 1];
+      return `<article class="bld${level ? '' : ' unbuilt'}">
+        <div class="bld-head"><h3>${esc(b.name)}</h3><span class="lvl">${level ? `nv ${level}/${b.maxLevel}` : 'por construir'}</span></div>
+        <p>${esc(b.effect(level))}</p>
+        ${maxed ? '<p class="muted">Nível máximo.</p>' : `<p class="bld-next">Próximo nível: ${esc(b.effect(level + 1))}</p>`}
+        ${
+          maxed
+            ? ''
+            : `<div class="bld-foot"><span class="num">🪙 ${cost}</span><button class="btn${check.ok ? ' primary' : ''}" data-build="${b.id}" ${check.ok ? '' : 'disabled'}>${level ? 'Melhorar' : 'Construir'}</button></div>
+          ${check.ok ? '' : `<p class="why">${esc(check.reason)}</p>`}`
+        }
+      </article>`;
+    }).join('');
+    const mineLevel = f.levels.mine;
+    this.show(`
+      <div class="select-wrap">
+        <div class="title-row">
+          <div>
+            <button class="btn ghost back-btn" id="fo-back">‹ Salão</button>
+            <div class="eyebrow">A tua base</div>
+            <h1 class="page-title">Fortaleza</h1>
+            <p class="tagline">Ganhas ouro em todos os modos: ${GOLD.matchWin} por vitória (${GOLD.matchLoss} por derrota), ${GOLD.expeditionStage} por etapa da Expedição e ${GOLD.expeditionWin} por conquistá-la, ${GOLD.dailyFirstWin} pela primeira vitória do desafio diário, ${GOLD.puzzleFirstSolve} por puzzle novo. Os edifícios só ajudam no modo PvE e na progressão, nunca na Arena.</p>
+          </div>
+          <div class="treasury">
+            <div class="gold num">🪙 ${f.gold}</div>
+            ${
+              mineLevel
+                ? `<div class="muted">Mina: ${MINE_RATE[mineLevel]}/hora · ${pending} à espera (máx. ${MINE_RATE[mineLevel] * MINE_CAP_HOURS})</div>
+                   <button class="btn${pending ? ' primary' : ''}" id="fo-collect" ${pending ? '' : 'disabled'}>Recolher ${pending}</button>`
+                : '<div class="muted">Constrói a Mina de Ouro para ganhar ouro mesmo quando não jogas.</div>'
+            }
+          </div>
+        </div>
+        ${img ? `<img class="fort-img" alt="A tua fortaleza com os edifícios construídos" src="${img}" />` : ''}
+        <div class="bld-grid">${cards}</div>
+      </div>`);
+    this.on('#fo-back', () => this.showHub());
+    this.on('#fo-collect', () => {
+      collectGold();
+      audio.play('heal');
+      this.showFortress();
+    });
+    this.el.querySelectorAll<HTMLElement>('[data-build]').forEach((n) =>
+      n.addEventListener('click', () => {
+        const id = n.dataset.build as BuildingId;
+        try {
+          saveFortress(upgrade(loadFortress(), id, Date.now()));
+          audio.play('ult');
+        } catch {
+          /* button state already explains why */
+        }
+        this.showFortress();
+        this.el.querySelector(`[data-build="${id}"]`)?.scrollIntoView({ block: 'center' });
+      }),
+    );
+  }
+
+  // =============================================================== arena (async PvP & guilds)
+
+  private guild(): { name: string; color: number } {
+    return loadRaw<{ name: string; color: number }>('guild') ?? { name: 'Guilda sem Nome', color: 0x4aa3ff };
+  }
+
+  /** Arena profile for the current season; a new season pays the old tier and soft-resets rating. */
+  private arena(): ArenaProfile {
+    const season = seasonKey();
+    const a = loadRaw<ArenaProfile>('arena') ?? { season, rating: START_RATING, wins: 0, losses: 0, friends: [], defense: null, seasonReward: null };
+    if (a.season !== season) {
+      const tier = tierOf(a.rating);
+      const updated: ArenaProfile = { ...a, season, rating: softReset(a.rating), wins: 0, losses: 0, seasonReward: { season: a.season, tier: tier.name, gold: tier.reward } };
+      save('arena', updated);
+      return updated;
+    }
+    return a;
+  }
+
+  private myDefense(): Defense {
+    const a = this.arena();
+    const g = this.guild();
+    const d = a.defense ?? generateDefense(mulberry32(7), g.name, g.color);
+    return { ...d, guild: g.name, color: g.color };
+  }
+
+  private war(): GuildWar {
+    const season = seasonKey();
+    const w = loadRaw<GuildWar>('war');
+    return w && w.season === season ? w : seasonWar(season);
+  }
+
+  private showArena(message = '') {
+    const a = this.arena();
+    const g = this.guild();
+    const def = this.myDefense();
+    const rivals = seasonRivals(a.season);
+    const tier = tierOf(a.rating);
+    const hex = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
+    const swatches = [0x4aa3ff, 0xe0524a, 0x3f7d4a, 0xd9a441, 0x7b4fa0, 0x2f8f9d, 0xd2642a, 0xe8e4da]
+      .map((c) => `<button class="swatch${c === g.color ? ' on' : ''}" data-color="${c}" style="background:${hex(c)}" aria-label="Cor ${hex(c)}"></button>`)
+      .join('');
+    const ladder = [
+      ...rivals.map((r) => ({ name: r.defense.guild, color: r.defense.color, rating: r.rating, id: r.id, me: false })),
+      { name: g.name, color: g.color, rating: a.rating, id: 'me', me: true },
+    ]
+      .sort((x, y) => y.rating - x.rating)
+      .map((row, i) => {
+        const rival = rivals.find((r) => r.id === row.id);
+        const gain = rival ? eloDelta(a.rating, rival.rating, true) : 0;
+        return `<tr class="${row.me ? 'me' : ''}">
+          <td class="num">${i + 1}</td>
+          <td><span class="banner-dot" style="background:${hex(row.color)}"></span>${esc(row.name)}</td>
+          <td class="num">${row.rating}</td>
+          <td>${rival ? `<span class="faces small">${this.faces(rival.defense.slots.map((x) => x.heroId), 'enemy')}</span>` : '<span class="muted">tu</span>'}</td>
+          <td>${rival ? `<button class="btn" data-attack="${rival.id}">Atacar <span class="muted">+${gain}</span></button>` : ''}</td>
+        </tr>`;
+      })
+      .join('');
+    const war = this.war();
+    const outcome = warOutcome(war);
+    const fronts = war.fronts
+      .map(
+        (f, i) => `<div class="front ${f.result}">
+        <div class="eyebrow">Frente ${i + 1}</div>
+        <div class="faces small">${this.faces(f.defense.slots.map((x) => x.heroId), 'enemy')}</div>
+        <div>${f.result === 'pending' ? (outcome === 'ongoing' ? `<button class="btn" data-front="${i}">Atacar</button>` : '<span class="muted">—</span>') : f.result === 'won' ? '✓ conquistada' : '✗ perdida'}</div>
+      </div>`,
+      )
+      .join('');
+    const friends = a.friends.length
+      ? a.friends
+          .map(
+            (f, i) => `<li><span class="banner-dot" style="background:${hex(f.color)}"></span><b>${esc(f.guild)}</b> <span class="faces small">${this.faces(f.slots.map((x) => x.heroId), 'enemy')}</span>
+            <button class="btn" data-friend="${i}">Desafiar</button> <button class="btn ghost" data-unfriend="${i}">Remover</button></li>`,
+          )
+          .join('')
+      : '<li class="muted">Ainda sem amigos. Cola abaixo o código de defesa que um amigo te enviar.</li>';
+    const replays = (loadRaw<Replay[]>('replays') ?? [])
+      .map((r, i) => `<li><span class="${r.winner === 'player' ? 'win' : 'loss'}">${r.winner === 'player' ? 'Vitória' : r.winner === 'draw' ? 'Empate' : 'Derrota'}</span> · ${esc(r.title)} <span class="muted">${esc(r.date)}</span> <button class="btn ghost" data-replay="${i}">Ver replay</button></li>`)
+      .join('');
+    const code = encodeDefense(def);
+    this.show(`
+      <div class="select-wrap">
+        <div class="title-row">
+          <div>
+            <button class="btn ghost back-btn" id="ar-back">‹ Salão</button>
+            <div class="eyebrow">Temporada ${esc(a.season)} · termina ao fim do domingo</div>
+            <h1 class="page-title">Arena das Guildas</h1>
+            <p class="tagline">Cada ataque é contra a defesa de outra guilda, jogada pela IA. Vitórias dão pontos de liga (Elo) e ${GOLD.arenaWin} de ouro. No fim da semana recebes ouro conforme o escalão e os pontos aproximam-se de ${START_RATING}.</p>
+          </div>
+          <div class="treasury">
+            <div class="gold num">${a.rating}</div>
+            <div class="muted">${tier.name} · ${a.wins}V ${a.losses}D esta semana</div>
+          </div>
+        </div>
+        ${message ? `<div class="feedback">${message}</div>` : ''}
+        ${a.seasonReward ? `<div class="feedback"><b>Temporada ${esc(a.seasonReward.season)} terminada:</b> escalão ${esc(a.seasonReward.tier)}. <button class="btn primary" id="ar-claim">Receber ${a.seasonReward.gold} de ouro</button></div>` : ''}
+        <div class="arena-grid">
+          <section class="panel">
+            <h2>A tua guilda</h2>
+            <label class="field">Nome <input id="ar-name" maxlength="24" value="${esc(g.name)}" /></label>
+            <div class="field">Estandarte <div class="swatches">${swatches}</div></div>
+            <h3 class="eyebrow">Defesa</h3>
+            <p class="muted">Quem te atacar enfrenta esta formação em ${esc(MAPS.find((m) => m.id === def.mapId)!.name)}.</p>
+            <div class="faces">${this.faces(def.slots.map((x) => x.heroId))}</div>
+            <div class="row-btns"><button class="btn" id="ar-edit">Editar defesa</button> <button class="btn" id="ar-copy">Copiar código</button></div>
+            <textarea id="ar-code" readonly rows="2" aria-label="Código da tua defesa">${code}</textarea>
+          </section>
+          <section class="panel">
+            <h2>Guerra de guilda</h2>
+            <p class="muted">Esta semana contra <b style="color:${hex(war.color)}">${esc(war.opponent)}</b>. Conquista 2 das 3 frentes para ganhar ${WAR_REWARD} de ouro.</p>
+            <div class="fronts">${fronts}</div>
+            ${outcome === 'won' ? '<p class="win">Guerra ganha! O ouro já está no tesouro.</p>' : outcome === 'lost' ? '<p class="loss">Guerra perdida. Nova guerra na próxima semana.</p>' : ''}
+          </section>
+        </div>
+        <section class="panel">
+          <h2>Liga da semana</h2>
+          <div class="table-wrap"><table class="stats-table ladder"><thead><tr><th>#</th><th>Guilda</th><th>Pontos</th><th>Defesa</th><th></th></tr></thead><tbody>${ladder}</tbody></table></div>
+        </section>
+        <div class="arena-grid">
+          <section class="panel">
+            <h2>Amigos</h2>
+            <ul class="friends">${friends}</ul>
+            <label class="field">Código de defesa de um amigo <textarea id="ar-import" rows="2" placeholder="GT1-…"></textarea></label>
+            <button class="btn" id="ar-add">Adicionar amigo</button>
+          </section>
+          <section class="panel">
+            <h2>Replays</h2>
+            <ul class="replays">${replays || '<li class="muted">As tuas últimas partidas aparecem aqui para rever jogada a jogada.</li>'}</ul>
+          </section>
+        </div>
+      </div>`);
+
+    this.on('#ar-back', () => this.showHub());
+    this.el.querySelector<HTMLInputElement>('#ar-name')!.addEventListener('change', (e) => {
+      const name = (e.target as HTMLInputElement).value.trim().slice(0, 24) || 'Guilda sem Nome';
+      save('guild', { ...g, name });
+      this.showArena('Nome da guilda guardado.');
+    });
+    this.el.querySelectorAll<HTMLElement>('[data-color]').forEach((n) =>
+      n.addEventListener('click', () => {
+        save('guild', { ...g, color: Number(n.dataset.color) });
+        this.showArena();
+      }),
+    );
+    this.on('#ar-edit', () => this.editDefense(def));
+    this.on('#ar-copy', () => {
+      const ta = this.el.querySelector<HTMLTextAreaElement>('#ar-code')!;
+      navigator.clipboard?.writeText(code).then(
+        () => this.showArena('Código copiado. Envia-o a um amigo: ele cola-o na Arena dele para te desafiar.'),
+        () => {
+          ta.select();
+        },
+      ) ?? ta.select();
+    });
+    this.on('#ar-claim', () => {
+      const cur = this.arena();
+      if (cur.seasonReward) this.game.awardGold(cur.seasonReward.gold, 'fim de temporada');
+      save('arena', { ...cur, seasonReward: null });
+      this.showArena('Recompensa de temporada recebida.');
+    });
+    this.on('#ar-add', () => {
+      const raw = this.el.querySelector<HTMLTextAreaElement>('#ar-import')!.value;
+      try {
+        const d = decodeDefense(raw);
+        const cur = this.arena();
+        save('arena', { ...cur, friends: [d, ...cur.friends.filter((f) => encodeDefense(f) !== encodeDefense(d))].slice(0, 10) });
+        this.showArena(`Guilda ${esc(d.guild)} adicionada aos amigos.`);
+      } catch (err) {
+        this.showArena(`Não foi possível ler o código: ${esc((err as Error).message)}`);
+      }
+    });
+    this.el.querySelectorAll<HTMLElement>('[data-attack]').forEach((n) =>
+      n.addEventListener('click', () => {
+        const rival = rivals.find((r) => r.id === n.dataset.attack)!;
+        this.attack(rival.defense, 'ladder', rival.rating);
+      }),
+    );
+    this.el.querySelectorAll<HTMLElement>('[data-front]').forEach((n) => n.addEventListener('click', () => this.attack(war.fronts[Number(n.dataset.front)].defense, 'war', 0, Number(n.dataset.front))));
+    this.el.querySelectorAll<HTMLElement>('[data-friend]').forEach((n) => n.addEventListener('click', () => this.attack(a.friends[Number(n.dataset.friend)], 'friend', 0)));
+    this.el.querySelectorAll<HTMLElement>('[data-unfriend]').forEach((n) =>
+      n.addEventListener('click', () => {
+        const cur = this.arena();
+        save('arena', { ...cur, friends: cur.friends.filter((_, i) => i !== Number(n.dataset.unfriend)) });
+        this.showArena();
+      }),
+    );
+    this.el.querySelectorAll<HTMLElement>('[data-replay]').forEach((n) =>
+      n.addEventListener('click', () => {
+        const r = (loadRaw<Replay[]>('replays') ?? [])[Number(n.dataset.replay)];
+        if (r) this.game.watchReplay(r, MAPS.find((m) => m.id === r.mapId)!, () => this.showArena());
+      }),
+    );
+  }
+
+  /** Attack flow: pick a team, deploy, fight the defense with the AI playing defenders. */
+  private attack(defense: Defense, kind: 'ladder' | 'war' | 'friend', rivalRating: number, front = 0) {
+    this.game.openPicker({
+      eyebrow: kind === 'war' ? `Guerra de guilda · frente ${front + 1}` : kind === 'friend' ? 'Amistoso' : 'Liga da semana',
+      title: `Atacar ${defense.guild}`,
+      intro: `Defesa: ${defense.slots.map((x) => getHero(x.heroId).name).join(', ')} em ${MAPS.find((m) => m.id === defense.mapId)!.name}. Escolhe quatro heróis para os vencer.`,
+      confirmLabel: 'Posicionar ›',
+      showDifficulty: false,
+      onConfirm: (team) => {
+        const map = MAPS.find((m) => m.id === defense.mapId)!;
+        const board = buildBoard(map);
+        this.game.launch({
+          kind: 'arena',
+          label: `${kind === 'war' ? 'Guerra' : kind === 'friend' ? 'Amistoso' : 'Liga'} · ${defense.guild}`,
+          map,
+          player: autoDeploy(board, team.map((heroId) => ({ heroId })), 'player'),
+          enemy: defenseDeployments(defense),
+          noise: 1,
+          deploy: true,
+          backLabel: '‹ Arena',
+          onBack: () => this.showArena(),
+          onFinish: (o) => this.afterAttack(o, kind, rivalRating, front),
+        });
+      },
+    });
+  }
+
+  private afterAttack(o: MatchOutcome, kind: 'ladder' | 'war' | 'friend', rivalRating: number, front: number) {
+    const won = o.winner === 'player';
+    let sub = '';
+    if (!o.surrendered) this.game.awardGold(won ? GOLD.arenaWin : GOLD.arenaLoss, won ? 'vitória na Arena' : 'participação');
+    if (kind === 'ladder') {
+      const a = this.arena();
+      const delta = eloDelta(a.rating, rivalRating, won);
+      save('arena', { ...a, rating: a.rating + delta, wins: a.wins + (won ? 1 : 0), losses: a.losses + (won ? 0 : 1) });
+      sub = `${delta >= 0 ? '+' : ''}${delta} pontos de liga (agora ${a.rating + delta}).`;
+    } else if (kind === 'war') {
+      const w = this.war();
+      w.fronts[front].result = won ? 'won' : 'lost';
+      save('war', w);
+      const out = warOutcome(w);
+      if (out === 'won') this.game.awardGold(WAR_REWARD, 'guerra de guilda ganha');
+      sub = out === 'won' ? 'Guerra de guilda ganha!' : out === 'lost' ? 'Guerra de guilda perdida.' : `Frente ${front + 1} ${won ? 'conquistada' : 'perdida'}.`;
+    } else sub = won ? 'Venceste a defesa do teu amigo.' : 'A defesa do teu amigo aguentou.';
+    this.game.showResult(o, {
+      sub,
+      primary: { label: 'Voltar à Arena', fn: () => this.showArena() },
+    });
+  }
+
+  private editDefense(start: Defense) {
+    let d: Defense = structuredClone(start);
+    let selected: number | null = null;
+    const render = (msg = '') => {
+      const map = MAPS.find((m) => m.id === d.mapId)!;
+      const board = buildBoard(map);
+      const cell = (x: number, row: 0 | 1) => {
+        const slot: DefenseSlot = { heroId: '', x, row };
+        const walk = isWalkable(board, defenseCell(slot));
+        const idx = d.slots.findIndex((s) => s.x === x && s.row === row);
+        const who = idx >= 0 ? d.slots[idx] : null;
+        return `<button class="def-cell${walk ? '' : ' blocked'}${idx === selected && idx >= 0 ? ' sel' : ''}" data-cell="${x},${row}" ${walk ? '' : 'disabled'}>
+          ${who ? `<img alt="${esc(getHero(who.heroId).name)}" src="${this.game.portrait(who.heroId)}" />` : walk ? '' : '▩'}</button>`;
+      };
+      const rows = ([1, 0] as const).map((row) => `<div class="def-row"><span class="muted">${row === 1 ? 'Frente' : 'Trás'}</span>${[0, 1, 2, 3, 4, 5].map((x) => cell(x, row)).join('')}</div>`).join('');
+      const pool = HEROES.map(
+        (h) => `<button class="draft-hero small${d.slots.some((s) => s.heroId === h.id) ? ' in' : ''}" data-dhero="${h.id}"><img alt="" src="${this.game.portrait(h.id)}" /><b>${esc(h.name)}</b></button>`,
+      ).join('');
+      this.show(`
+        <div class="select-wrap narrow">
+          <div>
+            <button class="btn ghost back-btn" id="de-back">‹ Arena</button>
+            <div class="eyebrow">A tua defesa</div>
+            <h1 class="page-title">Editar defesa</h1>
+            <p class="tagline">Escolhe o mapa e a formação. Clica num herói no tabuleiro e depois noutra casa para o mover; clica num herói da lista para trocar o herói selecionado (ou o primeiro lugar livre).</p>
+          </div>
+          ${msg ? `<div class="feedback">${msg}</div>` : ''}
+          <div class="seg" role="group" aria-label="Mapa">${MAPS.map((m) => `<button data-map="${m.id}" aria-pressed="${m.id === d.mapId}">${esc(m.name)}</button>`).join('')}</div>
+          <div class="def-board">${rows}<div class="muted def-note">↓ do outro lado chegam os atacantes</div></div>
+          ${this.game.traitsHtml(d.slots.map((s) => s.heroId), true)}
+          <div class="draft-pool">${pool}</div>
+          <div><button class="btn primary" id="de-save">Guardar defesa</button></div>
+        </div>`);
+      this.on('#de-back', () => this.showArena());
+      this.el.querySelectorAll<HTMLElement>('[data-map]').forEach((n) =>
+        n.addEventListener('click', () => {
+          const g = this.guild();
+          // Re-seat the same heroes on the new map's free cells.
+          const fresh = generateDefense(mulberry32(1), g.name, g.color);
+          const target = MAPS.find((m) => m.id === n.dataset.map)!;
+          const b = buildBoard(target);
+          const used = new Set<string>();
+          const slots = d.slots.map((s) => {
+            for (const row of [s.row, s.row === 1 ? 0 : 1] as (0 | 1)[])
+              for (const x of [s.x, 2, 3, 1, 4, 0, 5]) {
+                const k = `${x},${row}`;
+                if (!used.has(k) && isWalkable(b, defenseCell({ heroId: s.heroId, x, row }))) {
+                  used.add(k);
+                  return { heroId: s.heroId, x, row };
+                }
+              }
+            return s;
+          });
+          d = { ...fresh, guild: d.guild, color: d.color, mapId: target.id, slots };
+          render();
+        }),
+      );
+      this.el.querySelectorAll<HTMLElement>('[data-cell]').forEach((n) =>
+        n.addEventListener('click', () => {
+          const [x, row] = n.dataset.cell!.split(',').map(Number) as [number, 0 | 1];
+          const idx = d.slots.findIndex((s) => s.x === x && s.row === row);
+          if (selected === null) selected = idx >= 0 ? idx : null;
+          else {
+            const moving = d.slots[selected];
+            if (idx >= 0) d.slots[idx] = { ...d.slots[idx], x: moving.x, row: moving.row };
+            d.slots[selected] = { ...moving, x, row };
+            selected = null;
+          }
+          render();
+        }),
+      );
+      this.el.querySelectorAll<HTMLElement>('[data-dhero]').forEach((n) =>
+        n.addEventListener('click', () => {
+          const heroId = n.dataset.dhero!;
+          if (d.slots.some((s) => s.heroId === heroId)) return render('Esse herói já está na defesa.');
+          const i = selected ?? 0;
+          d.slots[i] = { ...d.slots[i], heroId };
+          selected = null;
+          render();
+        }),
+      );
+      this.on('#de-save', () => {
+        const g = this.guild();
+        const final = { ...d, guild: g.name, color: g.color };
+        const err = validateDefense(final);
+        if (err) return render(esc(err));
+        save('arena', { ...this.arena(), defense: final });
+        this.showArena('Defesa guardada. Copia o código para os teus amigos a enfrentarem.');
+      });
+    };
+    render();
+  }
+}
+
+interface ArenaProfile {
+  season: string;
+  rating: number;
+  wins: number;
+  losses: number;
+  friends: Defense[];
+  defense: Defense | null;
+  seasonReward: { season: string; tier: string; gold: number } | null;
 }

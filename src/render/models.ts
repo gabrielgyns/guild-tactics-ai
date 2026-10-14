@@ -262,10 +262,22 @@ export function renderPortraits(heroIds: string[], sides: Side[] = ['player', 'e
 }
 
 /** A small voxel diorama of the guild keep with a few heroes at the gate, for the hub. */
-export function renderGuildHall(heroIds: string[], skins: (id: string) => SkinId): string {
+export interface HallOptions {
+  /** Building levels (fortress); missing = not built. */
+  levels?: Partial<Record<'keep' | 'mine' | 'barracks' | 'infirmary' | 'forge' | 'maproom', number>>;
+  banner?: number;
+  width?: number;
+  height?: number;
+}
+
+export function renderGuildHall(heroIds: string[], skins: (id: string) => SkinId, opts: HallOptions = {}): string {
+  const lv = opts.levels ?? {};
+  const banner = opts.banner ?? 0x4aa3ff;
+  const W = opts.width ?? 560;
+  const H = opts.height ?? 300;
   try {
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
-    renderer.setSize(560, 300);
+    renderer.setSize(W, H);
     renderer.setPixelRatio(1);
     renderer.shadowMap.enabled = true;
     const scene = new THREE.Scene();
@@ -301,18 +313,60 @@ export function renderGuildHall(heroIds: string[], skins: (id: string) => SkinId
       add(1.2, 0.5, 1.2, x, 2.4, -0.7, 0x5a3e6e);
       add(0.6, 0.4, 0.6, x, 2.9, -0.7, 0x5a3e6e);
       add(0.05, 0.7, 0.05, x, 3.3, -0.7, 0x6b5232);
-      add(0.4, 0.26, 0.04, x + 0.22, 3.68, -0.7, 0x4aa3ff); // banner
+      add(0.4, 0.26, 0.04, x + 0.22, 3.68, -0.7, banner); // banner
     }
     // Hanging banners on the keep
-    for (const x of [-0.9, 0.9]) add(0.4, 0.8, 0.04, x, 0.6, 0.02, 0x4aa3ff).position.z = 0.03;
+    for (const x of [-0.9, 0.9]) add(0.4, 0.8, 0.04, x, 0.6, 0.02, banner).position.z = 0.03;
+    if ((lv.keep ?? 1) >= 2) {
+      add(0.9, 1.2, 0.9, 0, 1.8, -0.9, 0x8d8f96); // central tower
+      add(1.05, 0.4, 1.05, 0, 3.0, -0.9, 0x5a3e6e);
+    }
+    if ((lv.keep ?? 1) >= 3) {
+      add(0.08, 0.9, 0.08, 0, 3.4, -0.9, 0xd9a441, 0x6a4a10);
+      add(0.5, 0.32, 0.04, 0.27, 3.95, -0.9, banner);
+    }
+    // Fortress buildings
+    if (lv.mine) {
+      add(0.8, 0.5, 0.7, -2.55, 0, 0.35, 0x7a7c84);
+      add(0.5, 0.35, 0.5, -2.2, 0, 0.0, 0x8d8f96);
+      add(0.36, 0.18, 0.26, -2.15, 0, 0.75, 0x6b4a2b); // cart
+      for (let i = 0; i < lv.mine; i++) add(0.12, 0.1, 0.12, -2.25 + i * 0.12, 0.18, 0.75, 0xffd166, 0xb08a20);
+    }
+    if (lv.barracks) {
+      add(1.0, 0.6, 0.8, 2.55, 0, 0.35, 0x8a6a46);
+      add(1.1, 0.25, 0.9, 2.55, 0.6, 0.35, 0xa33b3b);
+      add(0.25, 0.4, 0.04, 2.55, 0, 0.77, 0x4a3420);
+      if (lv.barracks >= 2) {
+        add(0.06, 0.5, 0.06, 2.0, 0, 0.95, 0x6b4a2b); // training dummy
+        add(0.3, 0.06, 0.06, 2.0, 0.35, 0.95, 0x6b4a2b);
+        add(0.16, 0.16, 0.16, 2.0, 0.5, 0.95, 0xd8c8a0);
+      }
+    }
+    if (lv.infirmary) {
+      add(0.9, 0.5, 0.7, -2.6, 0, -1.55, 0xe8e4da);
+      add(0.95, 0.12, 0.75, -2.6, 0.5, -1.55, 0xd0cbbf);
+      add(0.3, 0.1, 0.04, -2.6, 0.22, -1.18, 0x3fa35a, 0x1a5a2a);
+      add(0.1, 0.3, 0.04, -2.6, 0.12, -1.18, 0x3fa35a, 0x1a5a2a);
+    }
+    if (lv.forge) {
+      add(0.9, 0.45, 0.7, 2.6, 0, -1.55, 0x5b4636);
+      add(0.25, 1.0, 0.25, 2.85, 0.45, -1.7, 0x6a6c74); // chimney
+      add(0.2, 0.12, 0.2, 2.85, 1.45, -1.7, 0xff8a3d, 0xff5a10);
+      add(0.3, 0.16, 0.18, 2.45, 0.45, -1.35, 0x2a2522); // anvil
+    }
+    if (lv.maproom) {
+      add(0.6, 2.2, 0.6, -1.1, 0, -1.85, 0xa8a49a);
+      add(0.75, 0.4, 0.75, -1.1, 2.2, -1.85, 0x2f6fb0);
+    }
     add(0.18, 0.18, 0.05, -0.9, 1.0, 0.06, 0xd9a441, 0x6a4a10);
     add(0.18, 0.18, 0.05, 0.9, 1.0, 0.06, 0xd9a441, 0x6a4a10);
-    // Trees
-    for (const [x, z] of [
-      [-2.7, 1.5],
-      [2.7, 1.3],
-      [2.5, -1.8],
-    ]) {
+    // Trees fill the corners that have no building yet
+    const trees: [number, number][] = [];
+    if (!lv.mine) trees.push([-2.7, 1.3]);
+    if (!lv.barracks) trees.push([2.7, 1.3]);
+    if (!lv.forge) trees.push([2.5, -1.8]);
+    if (!lv.infirmary) trees.push([-2.6, -1.7]);
+    for (const [x, z] of trees) {
       add(0.12, 0.3, 0.12, x, 0, z, 0x6b4a2b);
       add(0.5, 0.4, 0.5, x, 0.3, z, 0x2f6b34);
       add(0.3, 0.25, 0.3, x, 0.7, z, 0x3d8442);
@@ -326,9 +380,12 @@ export function renderGuildHall(heroIds: string[], skins: (id: string) => SkinId
       model.root.rotation.y = 0.15 - i * 0.1;
       g.add(model.root);
     });
-    const cam = new THREE.OrthographicCamera(-3.6, 3.6, 1.95, -1.95, 0.1, 50);
+    // Fit the island horizontally and keep room above for the tallest towers.
+    const halfH = 2.9;
+    const halfW = halfH * (W / H);
+    const cam = new THREE.OrthographicCamera(-halfW, halfW, halfH, -halfH, 0.1, 50);
     cam.position.set(4.5, 4.6, 7.5);
-    cam.lookAt(0, 0.9, 0);
+    cam.lookAt(0, 1.25, 0);
     renderer.render(scene, cam);
     const url = renderer.domElement.toDataURL('image/png');
     renderer.dispose();
