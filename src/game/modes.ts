@@ -148,13 +148,36 @@ export class Modes {
     }
     const pending = minePending(fort, Date.now());
 
-    const card = (id: string, eyebrow: string, title: string, body: string, status: string, cta: string, accent = false) => `
+    // Progressive unlocks: new players see two modes; the rest opens as they win.
+    const progress = loadRaw<{ wins: number }>('progress') ?? { wins: 0 };
+    const wins = Math.max(progress.wins, r.wins);
+    const showAll = loadRaw<boolean>('unlock-all') === true;
+    const seen = new Set(loadRaw<string[]>('seen-modes') ?? []);
+    const UNLOCK: Record<string, { ok: boolean; need: string }> = {
+      quick: { ok: true, need: '' },
+      tutorial: { ok: true, need: '' },
+      puzzles: { ok: tutorialDone || wins >= 1, need: 'conclui o Treino' },
+      expedition: { ok: wins >= 1, need: 'vence 1 partida' },
+      daily: { ok: wins >= 1, need: 'vence 1 partida' },
+      collection: { ok: wins >= 2, need: 'vence 2 partidas' },
+      draft: { ok: wins >= 3, need: 'vence 3 partidas' },
+      fortress: { ok: wins >= 3 || expRec.bestStage >= 2, need: 'vence 3 partidas' },
+      arena: { ok: wins >= 5 || expRec.wins >= 1, need: 'vence 5 partidas ou conquista uma Expedição' },
+    };
+    const open = (id: string) => showAll || UNLOCK[id]?.ok !== false;
+    const LABEL: Record<string, string> = { expedition: 'Expedição', daily: 'Desafio diário', puzzles: 'Puzzles', collection: 'Coleção', draft: 'Draft', fortress: 'Fortaleza', arena: 'Arena das Guildas' };
+    const locked = Object.keys(LABEL).filter((id) => !open(id));
+    const card = (id: string, eyebrow: string, title: string, body: string, status: string, cta: string, accent = false) => {
+      if (!open(id)) return '';
+      const fresh = !['quick', 'tutorial'].includes(id) && !seen.has(id);
+      return `
       <article class="mode-card${accent ? ' accent' : ''}">
-        <div class="eyebrow">${eyebrow}</div>
+        <div class="eyebrow">${eyebrow}${fresh ? ' <span class="new-badge">Novo!</span>' : ''}</div>
         <h2>${title}</h2>
         <p>${body}</p>
         <div class="mode-foot"><span class="mode-status">${status}</span><button class="btn${accent ? ' primary' : ''}" data-mode="${id}">${cta}</button></div>
       </article>`;
+    };
 
     this.show(`
       <div class="select-wrap">
@@ -214,8 +237,23 @@ export class Modes {
           ${card('collection', 'A tua guilda', 'Coleção', `${HEROES.length} heróis, traços de guilda e maestria. Cada partida dá XP aos heróis que lutaram; os níveis desbloqueiam insígnias e visuais.`, `${totalXp} XP · ${maxed} herói${maxed === 1 ? '' : 's'} no nível máximo`, 'Abrir')}
           ${this.extraCards()}
         </div>
+        ${
+          locked.length
+            ? `<div class="locked-strip"><span class="eyebrow">Por desbloquear</span>${locked
+                .map((id) => `<span class="lock">🔒 ${LABEL[id]} <span class="muted">— ${UNLOCK[id].need}</span></span>`)
+                .join('')}<button class="btn ghost" id="hub-all">Mostrar tudo já</button></div>`
+            : ''
+        }
       </div>`);
 
+    this.on('#hub-all', () => {
+      save('unlock-all', true);
+      this.showHub();
+    });
+    // Opening a mode clears its "new" badge.
+    this.el.querySelectorAll<HTMLElement>('[data-mode]').forEach((n) =>
+      n.addEventListener('click', () => save('seen-modes', [...new Set([...seen, n.dataset.mode!])])),
+    );
     this.on('[data-mode="expedition"]', () => this.openExpedition());
     this.on('[data-mode="daily"]', () => this.showDaily());
     this.on('[data-mode="quick"]', () => this.game.openQuickMatch());
@@ -545,7 +583,7 @@ export class Modes {
       label: 'Draft',
       map,
       player: autoDeploy(board, d.player.map((heroId) => ({ heroId })), 'player'),
-      enemy: autoDeploy(board, d.enemy.map((heroId) => ({ heroId })), 'enemy'),
+      enemy: autoDeploy(board, d.enemy.map((heroId) => ({ heroId, bonus: this.game.difficultyBonus })), 'enemy'),
       noise: this.game.difficultyNoise,
       deploy: true,
       backLabel: '‹ Draft',

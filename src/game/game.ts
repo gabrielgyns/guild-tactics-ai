@@ -21,6 +21,7 @@ import {
 } from '../domain/battle';
 import { autoDeploy } from '../domain/deploy';
 import { puzzleFailed } from '../domain/puzzles';
+import { analyzeMatch } from '../domain/analysis';
 import { DEPLOY_ROWS, MAPS, TERRAIN_HINT, TERRAIN_LABEL, buildBoard, isWalkable, posKey, samePos, terrainAt } from '../domain/board';
 import { CLASS_GLYPH, CLASS_LABEL, HEROES, findAbility, getHero, heroAbilities } from '../domain/heroes';
 import type { Ability, Element, BattleEvent, BattleState, Board, Command, HeroClass, Pos, Side, Unit } from '../domain/types';
@@ -91,19 +92,10 @@ export interface Replay {
 }
 type Mode = { kind: 'idle' } | { kind: 'target'; abilityId: string };
 
-const DIFFICULTY_NOISE: Record<Difficulty, number> = { recruit: 9, veteran: 0.8 };
+const DIFFICULTY_NOISE: Record<Difficulty, number> = { recruit: 16, veteran: 0.8 };
+/** Recruit opponents are also physically weaker, so a first match is winnable. */
+const RECRUIT_EASE = { atk: -2, maxHp: -5 };
 const STORAGE_KEY = 'guild-tactics.v1';
-
-const TIPS = [
-  'Cada aliado adjacente ao alvo dá +15% de dano: cerca os inimigos.',
-  'A floresta reduz o dano recebido em 25%. Tiro Certeiro ignora essa cobertura.',
-  'Atacar de uma colina dá +20% de dano e +1 de alcance aos ataques à distância.',
-  'Ações rápidas (Fúria, Salto, Bênção) não terminam o turno: usa-as antes de mover ou atacar.',
-  'Empurrar contra rochas, água ou outra unidade causa 3 de dano de colisão.',
-  'A ordem de turnos está no topo. Atordoar quem ainda não jogou nesta ronda vale ouro.',
-  'Inspirar dá um turno extra a um aliado: combina com Execução ou Meteoro.',
-  'Troca Arcana também funciona em inimigos: puxa um alvo frágil para o meio da tua equipa.',
-];
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
@@ -156,6 +148,9 @@ export class Game {
   private lastGoldHtml = '';
   private goldThisMatch = 0;
   private commandLog: Command[] = [];
+  private matchEvents: BattleEvent[] = [];
+  private ultReady = new Set<string>();
+  private suggestion: Map<string, HighlightKind> | null = null;
   private team: string[] = [];
   private difficulty: Difficulty = 'recruit';
   private record = loadRecord();
@@ -270,6 +265,11 @@ export class Game {
 
   get difficultyNoise() {
     return DIFFICULTY_NOISE[this.difficulty];
+  }
+
+  /** Stat handicap for opponents at the current difficulty (used by quick-style modes). */
+  get difficultyBonus() {
+    return this.difficulty === 'recruit' ? { ...RECRUIT_EASE } : undefined;
   }
 
   private renderSelect() {
@@ -393,6 +393,45 @@ export class Game {
     else if (this.team.length < 4) this.team = [...this.team, id];
     this.renderSelect();
     this.selectEl.scrollTop = scrollY;
+  }
+
+  private insightsHtml(o: MatchOutcome): string {
+    if (o.surrendered || this.spec.kind === 'tutorial' || this.spec.kind === 'replay') return '';
+    const tips = analyzeMatch(o.state, this.matchEvents, [...this.ultReady]);
+    const title = o.winner === 'player' ? 'O que correu bem e o que afinar' : 'Porque perdi?';
+    return `<div class="insights"><div class="eyebrow">${title}</div><ul>${tips.map((t) => `<li>${esc(t.text)}</li>`).join('')}</ul></div>`;
+  }
+
+  /** Shows what the AI would do with the active hero (without doing it). */
+  private suggest() {
+    if (!this.isPlayerTurn()) return;
+    const unit = activeUnit(this.state)!;
+    const cmds = planTurn(cloneState(this.state), { noise: 0, random: Math.random });
+    const hl = new Map<string, HighlightKind>();
+    const sim = cloneState(this.state);
+    const parts: string[] = [];
+    for (const c of cmds) {
+      if (c.type === 'move') {
+        hl.set(posKey(c.to), 'select');
+        parts.push('mover para a casa dourada');
+      } else if (c.type === 'ability') {
+        const caster = getUnit(sim, unit.id);
+        const ability = findAbility(caster.heroId, c.abilityId);
+        for (const p of areaOf(sim, caster, ability, c.target)) if (!hl.has(posKey(p))) hl.set(posKey(p), ability.affects === 'allies' ? 'heal' : 'area');
+        const target = unitAt(sim, c.target);
+        parts.push(`${ability.name}${target && target.id !== caster.id ? ` em ${getHero(target.heroId).name}` : ''}`);
+      } else if (c.type === 'endTurn') parts.push('terminar o turno');
+      try {
+        applyCommand(sim, c);
+      } catch {
+        break;
+      }
+      if (sim.active?.unitId !== unit.id) break;
+    }
+    this.suggestion = hl;
+    this.el.hint.innerHTML = `💡 <em>Sugestão:</em> ${esc(parts.join(' → '))}. <span style="color:var(--muted)">A decisão é tua.</span>`;
+    audio.play('click');
+    this.refreshBoard();
   }
 
   private saveReplay(s: BattleState) {
@@ -552,7 +591,7 @@ export class Game {
       label: `Partida rápida · ${this.difficulty === 'recruit' ? 'Recruta' : 'Veterano'}`,
       map: m,
       player: autoDeploy(board, this.team.map((heroId) => ({ heroId })), 'player'),
-      enemy: autoDeploy(board, enemies.map((heroId) => ({ heroId })), 'enemy'),
+      enemy: autoDeploy(board, enemies.map((heroId) => ({ heroId, bonus: this.difficulty === 'recruit' ? RECRUIT_EASE : undefined })), 'enemy'),
       noise: DIFFICULTY_NOISE[this.difficulty],
       deploy: true,
       backLabel: '‹ Equipa',
@@ -731,6 +770,9 @@ export class Game {
     this.logLines = [];
     this.el.log.innerHTML = '';
     this.commandLog = [];
+    this.matchEvents = [];
+    this.ultReady = new Set();
+    this.suggestion = null;
     this.renderTutorial();
     this.busy = true;
     await this.play(events);
@@ -740,6 +782,7 @@ export class Game {
 
   private async play(events: BattleEvent[]) {
     for (const ev of events) {
+      this.matchEvents.push(ev);
       this.onEventHud(ev);
       const sfx = this.sfxFor(ev);
       if (sfx) audio.play(sfx);
@@ -747,6 +790,7 @@ export class Game {
       await this.view.animate(ev, this.state);
     }
     this.view.syncUnits(this.state);
+    for (const u of this.state.units) if (u.side === 'player' && u.alive && u.energy >= RULES.energyMax) this.ultReady.add(u.id);
     this.renderHud();
   }
 
@@ -811,6 +855,7 @@ export class Game {
   }
 
   private async applyAndPlay(cmd: Command) {
+    this.suggestion = null;
     let events: BattleEvent[];
     try {
       events = applyCommand(this.state, cmd);
@@ -859,6 +904,7 @@ export class Game {
         e.preventDefault();
         this.exec({ type: 'endTurn' });
       } else if (k === 'z' || k === 'backspace') this.undo();
+      else if (k === 's') this.suggest();
     }
   }
 
@@ -1049,6 +1095,7 @@ export class Game {
         }
       }
     }
+    if (this.suggestion && this.mode.kind === 'idle' && !this.busy) for (const [k, v] of this.suggestion) hl.set(k, v);
     this.view.setHighlights(hl);
     this.view.showPreview(preview);
     this.view.setCursor(this.hover && !this.busy ? this.hover : null, this.mode.kind === 'target' ? 0xffd166 : 0xffffff);
@@ -1237,6 +1284,7 @@ export class Game {
       .join('');
     const a = s.active!;
     box.innerHTML = `${buttons}<div class="divider"></div>
+      <button class="act sys" data-sys="hint" title="O que a IA faria (S)"><span class="an">💡 Sugestão</span></button>
       <button class="act sys" data-sys="undo" ${a.canUndo ? '' : 'disabled'}><span class="an">↶ Desfazer</span></button>
       <button class="act sys end" data-sys="end"><span class="an">Terminar ␣</span></button>`;
 
@@ -1251,6 +1299,7 @@ export class Game {
     });
     // Disabled buttons don't fire pointer events in every browser: explain via the wrapper.
     box.querySelector('[data-sys="undo"]')!.addEventListener('click', () => this.undo());
+    box.querySelector('[data-sys="hint"]')!.addEventListener('click', () => this.suggest());
     box.querySelector('[data-sys="end"]')!.addEventListener('click', () => this.exec({ type: 'endTurn' }));
   }
 
@@ -1362,6 +1411,10 @@ export class Game {
       saveRecord(this.record);
     }
     audio.play(won ? 'victory' : 'defeat');
+    if (won && !surrendered && this.spec.kind !== 'tutorial' && this.spec.kind !== 'puzzle') {
+      const p = loadRaw<{ wins: number }>('progress') ?? { wins: 0 };
+      save('progress', { ...p, wins: p.wins + 1 });
+    }
     if (!surrendered && this.spec.kind !== 'tutorial' && this.spec.kind !== 'puzzle') {
       this.lastMasteryHtml = masteryHtml(awardMastery(s, masteryMultiplier(loadFortress()))) + awardBonds(s);
       this.refreshMastery();
@@ -1413,7 +1466,6 @@ export class Game {
       .join('');
     const enemiesLeft = s.units.filter((u) => u.side === 'enemy' && u.alive).length;
     const alliesLeft = mine.filter((u) => u.alive).length;
-    const tip = TIPS[Math.floor(Math.random() * TIPS.length)];
     const sub =
       opts.sub ??
       (o.surrendered
@@ -1438,13 +1490,13 @@ export class Game {
         <div class="kpi"><b class="num">${this.record.wins}–${this.record.losses}</b><span>registo (partidas rápidas)</span></div>
       </div>
       ${opts.extraHtml ?? ''}
+      ${this.insightsHtml(o)}
       ${this.lastGoldHtml}
       ${this.lastMasteryHtml}
       <div class="table-wrap"><table class="stats-table">
         <thead><tr><th>Herói</th><th>Dano</th><th>Cura</th><th>Sofrido</th><th>Abates</th></tr></thead>
         <tbody>${rows}</tbody>
       </table></div>
-      <div class="feedback"><b>Dica:</b> ${esc(tip)}</div>
       <div class="modal-actions">
         ${opts.secondary ? `<button class="btn ghost" id="res-second">${esc(opts.secondary.label)}</button>` : ''}
         <button class="btn primary" id="res-first">${esc(opts.primary.label)}</button>
