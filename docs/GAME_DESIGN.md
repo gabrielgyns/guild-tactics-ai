@@ -123,7 +123,20 @@ Enfraquecido (−30% de dano causado), Fortalecido (+ATQ), Em guarda (−50% de 
 
 `*` ação rápida · `m` ataque mágico. Todos têm também **Atacar** e **Defender**.
 
-## 6. Primeira leitura de equilíbrio
+## 6. Modos de jogo
+
+O **Salão da Guilda** (menu principal) dá acesso a todos os modos. Todos usam o mesmo ecrã de combate através de uma `MatchSpec` (mapa, equipas, dificuldade, regras especiais e o que fazer no fim).
+
+| Modo | Regras | Código |
+| --- | --- | --- |
+| **Expedição** | 5 combates seguidos com inimigos cada vez mais fortes (+1 ATQ e +3 PV por etapa; a 5.ª é elite). A vida passa de combate para combate (+20% de descanso). Depois de cada vitória escolhes 1 de 3 recompensas: relíquia (bónus para a equipa), treino (+2 ATQ, +5 PV a um herói), acampamento, ritual (reviver caídos) ou recruta (substitui um caído). Perder um combate termina a expedição. A expedição em curso fica guardada no browser. | `src/domain/expedition.ts` |
+| **Desafio diário** | Mapa, equipas e modificador gerados a partir da data: iguais para todos no mesmo dia. Guarda a melhor vitória (menos rondas). | `src/domain/daily.ts` |
+| **Partida rápida** | Escolhe 4 heróis contra uma equipa aleatória (uma de cada classe). | — |
+| **Draft** | Escolhas alternadas 1-2-2-2-1 de um conjunto comum; a IA cobre classes em falta e procura vantagem elemental. | `src/domain/draft.ts` |
+| **Puzzles** | Situações fixas para vencer numa só ronda. Um solucionador exaustivo (`solvePuzzle`) prova que cada um tem solução e que a ideia-chave é necessária (`scripts/puzzle-idea.ts`). | `src/domain/puzzles.ts` |
+| **Treino** | Combate guiado de 2 contra 2 em 8 passos. | `src/game/tutorial.ts` |
+
+## 7. Primeira leitura de equilíbrio
 
 Simulação IA contra IA (`npx vite-node scripts/simulate.ts 400`), equipas aleatórias:
 
@@ -133,7 +146,7 @@ Simulação IA contra IA (`npx vite-node scripts/simulate.ts 400`), equipas alea
 
 A IA não é um bom substituto de jogadores: estes números servem para detetar extremos, não para afinar.
 
-## 7. O que observar nos testes (30–50 jogadores)
+## 8. O que observar nos testes (30–50 jogadores)
 
 - Pedem outra partida sem ser convidados? Trocam de composição?
 - Duração real das partidas (o ecrã final mostra-a).
@@ -141,7 +154,7 @@ A IA não é um bom substituto de jogadores: estes números servem para detetar 
 - Táticas dominantes (ex.: Seren + Inspirar, ou tanque com Muralha a bloquear corredores).
 - Regresso após 1 dia e após 1 semana.
 
-## 8. Visão completa e roadmap
+## 9. Visão completa e roadmap
 
 A visão de longo prazo junta quatro referências, cada uma a contribuir com uma camada (sem copiar nomes, mecânicas proprietárias ou visuais):
 
@@ -155,7 +168,7 @@ A visão de longo prazo junta quatro referências, cada uma a contribuir com uma
 Ordem proposta (de trás para a frente: cada camada só entra se a anterior prender os jogadores):
 
 1. **Clareza e profundidade do combate** — zona de ameaça ✅, energia e supremos ✅, elementos ✅, santuários (objetivo de mapa) ✅, tutorial guiado ✅, som e zoom ✅.
-2. **Rejogabilidade** — modo Expedição (roguelite de 4–5 combates), desafio diário, draft.
+2. **Rejogabilidade** — modo Expedição ✅, desafio diário ✅, draft ✅, puzzles táticos ✅, Salão da Guilda (menu) ✅.
 3. **Coleção e progressão** — elementos, níveis e evolução de classe, vínculos, equipamento, mais heróis.
 4. **Fortaleza da guilda** — base com edifícios que dão recursos e melhorias.
 5. **PvP assíncrono e guildas** — defesas, ranking por temporada, guerras de guilda. As regras já são puras e determinísticas, por isso uma partida pode ser reproduzida a partir da lista de comandos.
