@@ -1464,3 +1464,11 @@ table.stats-table {
 .war-score { display: flex; align-items: baseline; gap: 12px; font-family: var(--font-display); font-size: 34px; }
 .war-score .muted { font-family: var(--font-cond); font-size: 13px; }
 .panel > .btn { justify-self: start; }
+
+.insights { background: #121a22; border-left: 3px solid var(--ally); padding: 8px 10px; border-radius: 2px; }
+.insights ul { margin: 4px 0 0; padding-left: 18px; display: grid; gap: 4px; font-size: 14px; line-height: 1.45; color: #dde3e8; }
+
+.locked-strip { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; padding: 10px 12px; border: 1px dashed var(--line-hi); border-radius: var(--radius); font-size: 13.5px; }
+.locked-strip .lock { color: var(--parchment); }
+.locked-strip .btn { margin-left: auto; padding: 4px 10px; font-size: 12.5px; }
+.new-badge { background: var(--brass); color: #1d1406; padding: 1px 6px; border-radius: 3px; margin-left: 6px; letter-spacing: 0.04em; }
