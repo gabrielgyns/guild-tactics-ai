@@ -88,13 +88,15 @@ describe('daily challenge', () => {
 });
 
 describe('draft', () => {
-  it('follows the snake order and never hands out a hero twice', () => {
+  it('bans first, then follows the snake order and never hands out a hero twice', () => {
     let d = newDraft();
     const rng = mulberry32(9);
     while (draftSide(d)) d = draftPick(d, draftSide(d) === 'player' ? available(d)[0] : aiDraftPick(d, rng));
+    expect(d.bans).toHaveLength(2);
     expect(d.player).toHaveLength(4);
     expect(d.enemy).toHaveLength(4);
-    expect(new Set([...d.player, ...d.enemy]).size).toBe(8);
+    const all = [...d.player, ...d.enemy, ...d.bans.map((b) => b.heroId)];
+    expect(new Set(all).size).toBe(10);
     expect(() => draftPick(newDraft(), 'nobody')).toThrow();
   });
 });
