@@ -53,6 +53,7 @@ import {
   type Slot,
 } from '../domain/progression';
 import { addGold } from './profile';
+import { attacksOn, Online, warOpponent, warScore, type AttackEntry, type OnlineGuild } from './online';
 import { BADGE, chooseSkin, LEVEL_REWARD, LEVEL_XP, levelFor, levelProgress, SKINS, skinOf } from './mastery';
 import { PUZZLES, type Puzzle } from '../domain/puzzles';
 import type { Stats } from '../domain/types';
@@ -983,6 +984,7 @@ export class Modes {
             ${outcome === 'won' ? '<p class="win">Guerra ganha! O ouro já está no tesouro.</p>' : outcome === 'lost' ? '<p class="loss">Guerra perdida. Nova guerra na próxima semana.</p>' : ''}
           </section>
         </div>
+        <section class="panel" id="ar-online"><h2>Guildas reais</h2><p class="muted">A ligar ao servidor da guilda…</p></section>
         <section class="panel">
           <h2>Liga da semana</h2>
           <div class="table-wrap"><table class="stats-table ladder"><thead><tr><th>#</th><th>Guilda</th><th>Pontos</th><th>Defesa</th><th></th></tr></thead><tbody>${ladder}</tbody></table></div>
@@ -1002,6 +1004,7 @@ export class Modes {
       </div>`);
 
     this.on('#ar-back', () => this.showHub());
+    void this.renderOnline();
     this.el.querySelector<HTMLInputElement>('#ar-name')!.addEventListener('change', (e) => {
       const name = (e.target as HTMLInputElement).value.trim().slice(0, 24) || 'Guilda sem Nome';
       save('guild', { ...g, name });
@@ -1063,10 +1066,136 @@ export class Modes {
     );
   }
 
+  /** Publishes (or refreshes) this player's guild document; optionally records an attack. */
+  private async publishMine(attack?: AttackEntry, warOpponentId?: string): Promise<boolean> {
+    const online = await Online.connect();
+    if (!online || online.canWrite === false) return false;
+    try {
+      const prev = await online.me();
+      const a = this.arena();
+      const def = this.myDefense();
+      const season = seasonKey();
+      const attacks = attack ? [attack, ...(prev?.attacks ?? [])].slice(0, 20) : (prev?.attacks ?? []);
+      let war = prev?.war && prev.war.season === season ? prev.war : null;
+      if (warOpponentId && attack) {
+        if (!war || war.opponent !== warOpponentId) war = { season, opponent: warOpponentId, results: [] };
+        war = { ...war, results: [...war.results, attack.won ? 'won' : 'lost'].slice(0, 3) as ('won' | 'lost')[] };
+      }
+      await online.save({
+        guild: def.guild,
+        color: def.color,
+        code: encodeDefense(def),
+        rating: a.rating,
+        wins: a.wins,
+        losses: a.losses,
+        season,
+        attacks,
+        targets: [...new Set(attacks.map((x) => x.target))].slice(0, 20),
+        war,
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** The "real guilds" panel: other people's published guilds, attacks on you, and the real weekly war. */
+  private async renderOnline() {
+    const box = () => this.el.querySelector<HTMLElement>('#ar-online');
+    const online = await Online.connect();
+    if (!box()) return;
+    if (!online) {
+      box()!.innerHTML = `<h2>Guildas reais</h2><p class="muted">As guildas de outras pessoas aparecem quando o jogo está aberto na página publicada do claude.ai, com sessão iniciada. Aqui podes continuar a desafiar amigos com códigos de defesa.</p>`;
+      return;
+    }
+    let guilds: OnlineGuild[];
+    try {
+      guilds = await online.all();
+    } catch {
+      if (box()) box()!.innerHTML = `<h2>Guildas reais</h2><p class="muted">O servidor da guilda não respondeu. Tenta outra vez daqui a pouco.</p>`;
+      return;
+    }
+    if (!box()) return;
+    const season = seasonKey();
+    const a = this.arena();
+    const me = guilds.find((g) => g.id === online.uid) ?? null;
+    const myCode = encodeDefense(this.myDefense());
+    const upToDate = !!me && me.code === myCode && me.season === season && me.rating === a.rating;
+    const hex = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
+    const others = guilds
+      .filter((g) => g.id !== online.uid)
+      .map((g) => {
+        try {
+          return { g, d: decodeDefense(g.code) };
+        } catch {
+          return null;
+        }
+      })
+      .filter((x): x is { g: OnlineGuild; d: Defense } => !!x)
+      .sort((x, y) => y.g.rating - x.g.rating);
+    const rows = others
+      .map(
+        ({ g, d }, i) => `<tr><td class="num">${i + 1}</td><td><span class="banner-dot" style="background:${hex(g.color)}"></span>${esc(g.guild)}${g.season === season ? '' : ' <span class="muted">(inativa)</span>'}</td>
+        <td class="num">${g.rating}</td><td><span class="faces small">${this.faces(d.slots.map((x) => x.heroId), 'enemy')}</span></td>
+        <td><button class="btn" data-real="${esc(g.id)}">Atacar <span class="muted">+${eloDelta(a.rating, g.rating, true)}</span></button></td></tr>`,
+      )
+      .join('');
+    const hits = attacksOn(guilds, online.uid, season)
+      .slice(0, 8)
+      .map((h) => `<li><span class="banner-dot" style="background:${hex(h.byColor)}"></span><b>${esc(h.by)}</b> atacou a tua defesa e ${h.won ? '<span class="loss">venceu</span>' : '<span class="win">perdeu</span>'}</li>`)
+      .join('');
+    const opp = me && me.season === season ? warOpponent(guilds, online.uid, season) : null;
+    const score = opp ? warScore(me, opp, season) : null;
+    let warHtml = '<p class="muted">Publica a tua guilda esta semana para entrares no emparelhamento da guerra.</p>';
+    if (me && me.season === season && !opp) warHtml = '<p class="muted">Ainda não há outra guilda real disponível para emparelhar esta semana.</p>';
+    if (opp && score) {
+      const over = score.myAttacksLeft === 0 && score.theirAttacksLeft === 0;
+      warHtml = `<p>Esta semana contra <b style="color:${hex(opp.color)}">${esc(opp.guild)}</b>: cada guilda ataca a defesa da outra até 3 vezes; ganha quem vencer mais.</p>
+        <div class="war-score"><span class="num">${score.mine}</span><span class="muted">tu · eles</span><span class="num">${score.theirs}</span></div>
+        <p class="muted">Ataques restantes: tu ${score.myAttacksLeft}, eles ${score.theirAttacksLeft}.</p>
+        ${over ? `<p class="${score.mine > score.theirs ? 'win' : score.mine < score.theirs ? 'loss' : ''}">${score.mine > score.theirs ? 'Guerra ganha!' : score.mine < score.theirs ? 'Guerra perdida.' : 'Empate.'}</p>` : score.myAttacksLeft > 0 ? '<button class="btn primary" id="ar-realwar">Atacar na guerra</button>' : '<p class="muted">Espera pelos ataques da outra guilda.</p>'}`;
+    }
+    const readOnly = online.canWrite === false;
+    box()!.innerHTML = `<h2>Guildas reais</h2>
+      <p class="muted">${readOnly ? 'Nesta página só tens permissão de leitura: podes atacar, mas os resultados não ficam registados.' : upToDate ? 'A tua guilda está publicada: outras pessoas veem a tua defesa e podem atacá-la.' : 'Publica a tua guilda para outras pessoas verem e atacarem a tua defesa.'}</p>
+      ${readOnly ? '' : `<div><button class="btn${upToDate ? '' : ' primary'}" id="ar-publish">${me ? 'Atualizar a minha guilda' : 'Publicar a minha guilda'}</button></div>`}
+      ${rows ? `<div class="table-wrap"><table class="stats-table ladder"><thead><tr><th>#</th><th>Guilda</th><th>Pontos</th><th>Defesa</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="muted">Ainda não há outras guildas publicadas. Partilha esta página com amigos para começarem.</p>'}
+      <h3 class="eyebrow">Guerra entre guildas reais</h3>${warHtml}
+      <h3 class="eyebrow">Ataques à tua defesa esta semana</h3><ul class="friends">${hits || '<li class="muted">Ninguém te atacou esta semana.</li>'}</ul>`;
+    box()!.querySelector('#ar-publish')?.addEventListener('click', async () => {
+      const ok = await this.publishMine();
+      if (ok) audio.play('shield');
+      void this.renderOnline();
+    });
+    box()!.querySelectorAll<HTMLElement>('[data-real]').forEach((n) =>
+      n.addEventListener('click', () => {
+        const hit = others.find((x) => x.g.id === n.dataset.real);
+        if (hit) this.attack(hit.d, 'online', hit.g.rating, 0, hit.g);
+      }),
+    );
+    box()!.querySelector('#ar-realwar')?.addEventListener('click', () => {
+      if (!opp) return;
+      try {
+        this.attack(decodeDefense(opp.code), 'onlineWar', opp.rating, 0, opp);
+      } catch {
+        void this.renderOnline();
+      }
+    });
+  }
+
   /** Attack flow: pick a team, deploy, fight the defense with the AI playing defenders. */
-  private attack(defense: Defense, kind: 'ladder' | 'war' | 'friend', rivalRating: number, front = 0) {
+  private attack(defense: Defense, kind: AttackKind, rivalRating: number, front = 0, target?: OnlineGuild) {
     this.game.openPicker({
-      eyebrow: kind === 'war' ? `Guerra de guilda · frente ${front + 1}` : kind === 'friend' ? 'Amistoso' : 'Liga da semana',
+      eyebrow:
+        kind === 'war'
+          ? `Guerra de guilda · frente ${front + 1}`
+          : kind === 'friend'
+            ? 'Amistoso'
+            : kind === 'onlineWar'
+              ? 'Guerra entre guildas reais'
+              : kind === 'online'
+                ? 'Guilda real'
+                : 'Liga da semana',
       title: `Atacar ${defense.guild}`,
       intro: `Defesa: ${defense.slots.map((x) => getHero(x.heroId).name).join(', ')} em ${MAPS.find((m) => m.id === defense.mapId)!.name}. Escolhe quatro heróis para os vencer.`,
       confirmLabel: 'Posicionar ›',
@@ -1076,7 +1205,7 @@ export class Modes {
         const board = buildBoard(map);
         this.game.launch({
           kind: 'arena',
-          label: `${kind === 'war' ? 'Guerra' : kind === 'friend' ? 'Amistoso' : 'Liga'} · ${defense.guild}`,
+          label: `${kind === 'war' || kind === 'onlineWar' ? 'Guerra' : kind === 'friend' ? 'Amistoso' : 'Liga'} · ${defense.guild}`,
           map,
           player: autoDeploy(board, team.map((heroId) => ({ heroId })), 'player'),
           enemy: defenseDeployments(defense),
@@ -1084,15 +1213,28 @@ export class Modes {
           deploy: true,
           backLabel: '‹ Arena',
           onBack: () => this.showArena(),
-          onFinish: (o) => this.afterAttack(o, kind, rivalRating, front),
+          onFinish: (o) => void this.afterAttack(o, kind, rivalRating, front, target),
         });
       },
     });
   }
 
-  private afterAttack(o: MatchOutcome, kind: 'ladder' | 'war' | 'friend', rivalRating: number, front: number) {
+  private async afterAttack(o: MatchOutcome, kind: AttackKind, rivalRating: number, front: number, target?: OnlineGuild) {
     const won = o.winner === 'player';
     let sub = '';
+    if ((kind === 'online' || kind === 'onlineWar') && target) {
+      const a = this.arena();
+      const delta = kind === 'online' ? eloDelta(a.rating, rivalRating, won) : 0;
+      save('arena', { ...a, rating: a.rating + delta, wins: a.wins + (won ? 1 : 0), losses: a.losses + (won ? 0 : 1) });
+      if (!o.surrendered) this.game.awardGold(won ? GOLD.arenaWin : GOLD.arenaLoss, won ? 'vitória contra uma guilda real' : 'participação');
+      if (won) this.game.awardLoot(0.4);
+      const saved = await this.publishMine({ target: target.id, targetGuild: target.guild, won, at: Date.now(), season: seasonKey() }, kind === 'onlineWar' ? target.id : undefined);
+      sub =
+        (kind === 'online' ? `${delta >= 0 ? '+' : ''}${delta} pontos de liga. ` : `Ataque de guerra ${won ? 'ganho' : 'perdido'}. `) +
+        (saved ? 'O resultado ficou registado no servidor da guilda.' : 'Não foi possível registar no servidor (só tens leitura nesta página).');
+      this.game.showResult(o, { sub, primary: { label: 'Voltar à Arena', fn: () => this.showArena() } });
+      return;
+    }
     if (!o.surrendered) this.game.awardGold(won ? GOLD.arenaWin : GOLD.arenaLoss, won ? 'vitória na Arena' : 'participação');
     if (won) this.game.awardLoot(0.3);
     if (kind === 'ladder') {
@@ -1201,7 +1343,8 @@ export class Modes {
         const err = validateDefense(final);
         if (err) return render(esc(err));
         save('arena', { ...this.arena(), defense: final });
-        this.showArena('Defesa guardada. Copia o código para os teus amigos a enfrentarem.');
+        void this.publishMine();
+        this.showArena('Defesa guardada. Se a tua guilda está publicada, as outras guildas já veem a nova formação; também podes copiar o código para amigos.');
       });
     };
     render();
@@ -1217,3 +1360,5 @@ interface ArenaProfile {
   defense: Defense | null;
   seasonReward: { season: string; tier: string; gold: number } | null;
 }
+
+type AttackKind = 'ladder' | 'war' | 'friend' | 'online' | 'onlineWar';
