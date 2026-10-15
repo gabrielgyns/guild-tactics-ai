@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { posKey, samePos, terrainAt } from '../domain/board';
 import { findAbility, getHero } from '../domain/heroes';
-import type { BattleEvent, BattleState, Board, DamageTag, Pos, StatusKind, Unit } from '../domain/types';
+import type { BattleEvent, BattleState, Board, DamageTag, Element, Pos, StatusKind, Unit } from '../domain/types';
 import { buildHeroModel, mat, type HeroModel, type SkinId } from './models';
 import { ELEMENT_COLOR } from '../domain/elements';
 
@@ -108,6 +108,8 @@ export class BattleView {
   private cursor: THREE.Mesh;
   private marker: THREE.Group;
   private water: THREE.Mesh[] = [];
+  private flames: THREE.Mesh[] = [];
+  private flies: THREE.Mesh[] = [];
   private units = new Map<string, UnitView>();
   private tweens: Tween[] = [];
   private azimuth = Math.PI / 4;
@@ -209,6 +211,8 @@ export class BattleView {
     this.hitBoxes = [];
     this.water = [];
     this.shrineCrystals = [];
+    this.flames = [];
+    this.flies = [];
     this.overlays = [];
     for (const u of this.units.values()) this.removeUnitView(u);
     this.units.clear();
@@ -222,6 +226,37 @@ export class BattleView {
     const trim = new THREE.Mesh(new THREE.BoxGeometry(W + 0.9, 0.16, H + 0.9), mat(0x6b5232));
     trim.position.y = -1.04;
     this.boardGroup.add(trim);
+    // Corner torches on the war table.
+    for (const [sx, sz] of [
+      [-1, -1],
+      [1, -1],
+      [-1, 1],
+      [1, 1],
+    ]) {
+      const x = sx * (W / 2 + 0.2);
+      const z = sz * (H / 2 + 0.2);
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.7, 0.14), mat(0x5b4636));
+      post.position.set(x, -0.15, z);
+      const bowl = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.1, 0.26), mat(0x3a3a40));
+      bowl.position.set(x, 0.24, z);
+      const flame = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.22, 0.16), new THREE.MeshBasicMaterial({ color: 0xffb347 }));
+      flame.position.set(x, 0.38, z);
+      const core = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.14, 0.08), new THREE.MeshBasicMaterial({ color: 0xfff1b0 }));
+      core.position.set(x, 0.36, z);
+      const light = new THREE.PointLight(0xffa040, 1.4, 3.2, 1.6);
+      light.position.set(x, 0.6, z);
+      flame.userData.phase = sx * 1.7 + sz * 0.9;
+      this.flames.push(flame);
+      this.boardGroup.add(post, bowl, flame, core, light);
+    }
+    // Fireflies drifting over the board.
+    const flyMat = new THREE.MeshBasicMaterial({ color: 0xe8ffa0, transparent: true, opacity: 0.8 });
+    for (let i = 0; i < 22; i++) {
+      const f = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.035, 0.035), flyMat);
+      f.userData = { ax: (Math.random() - 0.5) * W, az: (Math.random() - 0.5) * H, ph: Math.random() * 10, sp: 0.2 + Math.random() * 0.3 };
+      this.flies.push(f);
+      this.boardGroup.add(f);
+    }
 
     const capGeo = new THREE.BoxGeometry(1 / 3, 0.1, 1 / 3);
     const caps = new THREE.InstancedMesh(capGeo, new THREE.MeshLambertMaterial(), W * H * 9);
@@ -230,6 +265,11 @@ export class BattleView {
     const baseGeo = new THREE.BoxGeometry(1, 1, 1);
     const bases = new THREE.InstancedMesh(baseGeo, new THREE.MeshLambertMaterial(), W * H);
     bases.receiveShadow = true;
+    const stones = new THREE.InstancedMesh(baseGeo, new THREE.MeshLambertMaterial(), W * H);
+    const decorCap = W * H * 5;
+    const decor = new THREE.InstancedMesh(baseGeo, new THREE.MeshLambertMaterial(), decorCap);
+    decor.castShadow = true;
+    let di = 0;
     const m4 = new THREE.Matrix4();
     const color = new THREE.Color();
     let ci = 0;
@@ -246,11 +286,39 @@ export class BattleView {
         const top = TERRAIN_HEIGHT[t];
         const c = this.tileCenter({ x, y });
         // Base column (from the plinth up to just under the cap).
+        // Strata: stone at the bottom, a band of soil under the grass.
         const baseTop = t === 'water' ? -0.4 : top - 0.1;
-        const baseH = baseTop + 0.5;
-        m4.makeScale(0.995, baseH, 0.995).setPosition(c.x, -0.5 + baseH / 2, c.z);
+        const soilBottom = Math.min(baseTop, -0.24);
+        const soilH = baseTop - soilBottom;
+        m4.makeScale(0.995, Math.max(0.001, soilH), 0.995).setPosition(c.x, soilBottom + soilH / 2, c.z);
         bases.setMatrixAt(y * W + x, m4);
-        bases.setColorAt(y * W + x, color.set(t === 'hill' ? 0x8a6a46 : 0x6e5338));
+        bases.setColorAt(y * W + x, color.set(t === 'hill' ? 0x8a6a46 : 0x6e5338).multiplyScalar(0.92 + rnd() * 0.12));
+        const stoneH = soilBottom + 0.5;
+        m4.makeScale(0.995, stoneH, 0.995).setPosition(c.x, -0.5 + stoneH / 2, c.z);
+        stones.setMatrixAt(y * W + x, m4);
+        stones.setColorAt(y * W + x, color.set([0x77746c, 0x6b6962, 0x827f76][Math.floor(rnd() * 3)]));
+
+        // Grass tufts, flowers and pebbles near the tile edges (the centre stays clear for units).
+        if (t === 'plain' || t === 'hill' || t === 'forest') {
+          const n = 2 + Math.floor(rnd() * 3);
+          for (let k = 0; k < n && di < decorCap; k++) {
+            const edge = rnd() < 0.5;
+            const dx = edge ? (rnd() < 0.5 ? -1 : 1) * (0.36 + rnd() * 0.1) : (rnd() - 0.5) * 0.9;
+            const dz = edge ? (rnd() - 0.5) * 0.9 : (rnd() < 0.5 ? -1 : 1) * (0.36 + rnd() * 0.1);
+            const roll = rnd();
+            if (roll < 0.62) {
+              m4.makeScale(0.035, 0.07 + rnd() * 0.06, 0.035).setPosition(c.x + dx, top + 0.04, c.z + dz);
+              decor.setColorAt(di, color.set(t === 'forest' ? 0x2f6b34 : t === 'hill' ? 0x8fae5a : 0x5e9a40));
+            } else if (roll < 0.86 && t !== 'forest') {
+              m4.makeScale(0.05, 0.05, 0.05).setPosition(c.x + dx, top + 0.035, c.z + dz);
+              decor.setColorAt(di, color.set([0xfff3c4, 0xffd166, 0xf28fb5, 0x9fc8ff][Math.floor(rnd() * 4)]));
+            } else {
+              m4.makeScale(0.07, 0.04, 0.06).setPosition(c.x + dx, top + 0.02, c.z + dz);
+              decor.setColorAt(di, color.set(0xa7a294));
+            }
+            decor.setMatrixAt(di++, m4);
+          }
+        }
 
         for (let i = 0; i < 9; i++) {
           const sx = (i % 3) - 1;
@@ -278,6 +346,25 @@ export class BattleView {
           w.userData.phase = x * 0.7 + y * 1.3;
           this.water.push(w);
           this.boardGroup.add(w);
+          // Foam where the water meets land.
+          for (const [ox, oy] of [
+            [1, 0],
+            [-1, 0],
+            [0, 1],
+            [0, -1],
+          ]) {
+            const nx = x + ox;
+            const ny = y + oy;
+            if (nx < 0 || ny < 0 || nx >= W || ny >= H || board.tiles[ny][nx] === 'water') continue;
+            const foam = new THREE.Mesh(
+              new THREE.BoxGeometry(ox ? 0.07 : 0.96, 0.03, oy ? 0.07 : 0.96),
+              new THREE.MeshBasicMaterial({ color: 0xe6f6ff, transparent: true, opacity: 0.75 }),
+            );
+            foam.position.set(c.x + ox * 0.46, top - 0.1, c.z + oy * 0.46);
+            foam.userData.phase = w.userData.phase;
+            this.water.push(foam);
+            this.boardGroup.add(foam);
+          }
         }
         if (t === 'forest') this.addTrees(c, rnd);
         if (t === 'rock') this.addRocks(c, rnd);
@@ -310,7 +397,12 @@ export class BattleView {
     }
     caps.instanceMatrix.needsUpdate = true;
     if (caps.instanceColor) caps.instanceColor.needsUpdate = true;
-    this.boardGroup.add(caps, bases);
+    decor.count = di;
+    for (const im of [bases, stones, decor]) {
+      im.instanceMatrix.needsUpdate = true;
+      if (im.instanceColor) im.instanceColor.needsUpdate = true;
+    }
+    this.boardGroup.add(caps, bases, stones, decor);
     this.resize();
   }
 
@@ -321,6 +413,21 @@ export class BattleView {
     ];
     for (const [dx, dz] of spots) {
       const s = 0.8 + rnd() * 0.3;
+      if (rnd() < 0.5) {
+        // Pine: a trunk and three shrinking tiers.
+        const trunk = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.18 * s, 0.08), mat(0x5b3d22));
+        trunk.position.set(c.x + dx, 0.09 * s, c.z + dz);
+        trunk.castShadow = true;
+        this.boardGroup.add(trunk);
+        [0.34, 0.26, 0.16].forEach((w, i) => {
+          const tier = new THREE.Mesh(new THREE.BoxGeometry(w * s, 0.16 * s, w * s), mat(i % 2 ? 0x2f6b3a : 0x26583a));
+          tier.position.set(c.x + dx, (0.22 + i * 0.15) * s, c.z + dz);
+          tier.rotation.y = i * 0.4;
+          tier.castShadow = true;
+          this.boardGroup.add(tier);
+        });
+        continue;
+      }
       const trunk = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.22 * s, 0.09), mat(0x6b4a2b));
       trunk.position.set(c.x + dx, 0.11 * s, c.z + dz);
       const leaf1 = new THREE.Mesh(new THREE.BoxGeometry(0.3 * s, 0.24 * s, 0.3 * s), mat(0x2f6b34));
@@ -371,6 +478,13 @@ export class BattleView {
       m.castShadow = true;
       m.receiveShadow = true;
       this.boardGroup.add(m);
+      if (i === 0) {
+        // Moss on top of the main boulder.
+        const moss = new THREE.Mesh(new THREE.BoxGeometry(w * 0.7, 0.04, d * 0.6), mat(0x5e8a3e));
+        moss.position.set(m.position.x - 0.05, y + h + 0.02, m.position.z + 0.04);
+        moss.rotation.y = m.rotation.y;
+        this.boardGroup.add(moss);
+      }
     });
   }
 
@@ -596,6 +710,22 @@ export class BattleView {
       c.rotation.y = time * 1.2 + c.userData.phase;
       c.position.y = 0.5 + Math.sin(time * 2 + c.userData.phase) * 0.04;
     }
+    for (const f of this.flames) {
+      const k = 1 + Math.sin(time * 11 + f.userData.phase) * 0.12 + Math.sin(time * 23 + f.userData.phase) * 0.06;
+      f.scale.set(k, 1 + (k - 1) * 2, k);
+    }
+    for (const f of this.flies) {
+      const d = f.userData as { ax: number; az: number; ph: number; sp: number };
+      f.position.set(d.ax + Math.sin(time * d.sp + d.ph) * 0.8, 0.6 + Math.sin(time * d.sp * 1.7 + d.ph) * 0.35, d.az + Math.cos(time * d.sp * 0.8 + d.ph) * 0.8);
+      (f.material as THREE.MeshBasicMaterial).opacity = 0.35 + Math.max(0, Math.sin(time * 2.4 + d.ph)) * 0.6;
+    }
+    // Idle breathing: each hero on its own phase.
+    for (const v of this.units.values()) {
+      if (!v.alive) continue;
+      const ph = v.id.length * 1.37 + v.id.charCodeAt(1);
+      v.model.idle.position.y = Math.sin(time * 2.2 + ph) * 0.012;
+      v.model.idle.scale.y = 1 + Math.sin(time * 2.2 + ph) * 0.012;
+    }
     for (const w of this.water) w.position.y = -0.32 + Math.sin(time * 1.6 + w.userData.phase) * 0.02;
     (this.cursor.material as THREE.MeshBasicMaterial).opacity = 0.75 + Math.sin(time * 6) * 0.2;
 
@@ -709,18 +839,6 @@ export class BattleView {
       material.opacity = 1 - t;
       if (t >= 1) for (const p of parts) this.fxGroup.remove(p.m);
     });
-  }
-
-  private async projectile(from: THREE.Vector3, to: THREE.Vector3, color: number, arc: number, size = 0.12) {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(size, size, size), new THREE.MeshBasicMaterial({ color }));
-    this.fxGroup.add(m);
-    const dist = from.distanceTo(to);
-    await this.tween(140 + dist * 60, (t) => {
-      m.position.lerpVectors(from, to, t);
-      m.position.y += Math.sin(t * Math.PI) * arc;
-      m.rotation.set(t * 8, t * 6, 0);
-    });
-    this.fxGroup.remove(m);
   }
 
   private flash(v: UnitView, color: number) {
@@ -837,21 +955,168 @@ export class BattleView {
     v.pos = { ...to };
   }
 
+  // ------------------------------------------------------------ elemental VFX
+
+  private static FX: Record<Element, { core: number; glow: number }> = {
+    fire: { core: 0xffd27a, glow: 0xff5a1f },
+    water: { core: 0xd8f4ff, glow: 0x3fa0ff },
+    nature: { core: 0xd6f7a0, glow: 0x3fa35a },
+    light: { core: 0xfffbe0, glow: 0xffc94a },
+    shadow: { core: 0xe2c8ff, glow: 0x7a3ad0 },
+  };
+
+  /** A flat ring that expands and fades on the ground. */
+  private impactRing(at: THREE.Vector3, color: number, size = 1) {
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.28, 0.36, 24),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false }),
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(at.x, at.y + 0.04, at.z);
+    this.fxGroup.add(ring);
+    void this.tween(420, (t) => {
+      ring.scale.setScalar((0.6 + easeOut(t) * 1.4) * size);
+      (ring.material as THREE.MeshBasicMaterial).opacity = 0.9 * (1 - t);
+      if (t >= 1) this.fxGroup.remove(ring);
+    });
+  }
+
+  /** Element-flavoured particles: embers, ice shards, leaves, light rays or shadow smoke. */
+  private elementBurst(at: THREE.Vector3, el: Element, count = 10) {
+    const fx = BattleView.FX[el];
+    const parts: { m: THREE.Mesh; v: THREE.Vector3; spin: number }[] = [];
+    const material = new THREE.MeshBasicMaterial({ color: fx.glow, transparent: true });
+    const coreMat = new THREE.MeshBasicMaterial({ color: fx.core, transparent: true });
+    if (el === 'light') {
+      const beam = new THREE.Mesh(new THREE.BoxGeometry(0.34, 2.2, 0.34), new THREE.MeshBasicMaterial({ color: fx.core, transparent: true, opacity: 0.7, depthWrite: false }));
+      beam.position.set(at.x, at.y + 1.0, at.z);
+      this.fxGroup.add(beam);
+      void this.tween(500, (t) => {
+        beam.scale.set(1 - t * 0.8, 1, 1 - t * 0.8);
+        (beam.material as THREE.MeshBasicMaterial).opacity = 0.7 * (1 - t);
+        if (t >= 1) this.fxGroup.remove(beam);
+      });
+    }
+    for (let i = 0; i < count; i++) {
+      const geo =
+        el === 'water'
+          ? new THREE.BoxGeometry(0.04, 0.14, 0.04)
+          : el === 'nature'
+            ? new THREE.BoxGeometry(0.09, 0.015, 0.06)
+            : el === 'shadow'
+              ? new THREE.BoxGeometry(0.12, 0.12, 0.12)
+              : new THREE.BoxGeometry(0.06, 0.06, 0.06);
+      const m = new THREE.Mesh(geo, i % 3 === 0 ? coreMat : material);
+      m.position.copy(at);
+      const a = (i / count) * Math.PI * 2 + Math.random() * 0.5;
+      const v =
+        el === 'fire'
+          ? new THREE.Vector3(Math.cos(a) * 0.4, 1.2 + Math.random(), Math.sin(a) * 0.4)
+          : el === 'water'
+            ? new THREE.Vector3(Math.cos(a) * 2, 1 + Math.random(), Math.sin(a) * 2)
+            : el === 'nature'
+              ? new THREE.Vector3(Math.cos(a) * 1.2, 0.8 + Math.random() * 0.6, Math.sin(a) * 1.2)
+              : el === 'shadow'
+                ? new THREE.Vector3(Math.cos(a) * 0.6, 0.3 + Math.random() * 0.3, Math.sin(a) * 0.6)
+                : new THREE.Vector3(Math.cos(a) * 0.8, 1.6 + Math.random(), Math.sin(a) * 0.8);
+      parts.push({ m, v, spin: (Math.random() - 0.5) * 0.6 });
+      this.fxGroup.add(m);
+    }
+    void this.tween(el === 'shadow' ? 700 : 620, (t) => {
+      for (const p of parts) {
+        p.m.position.addScaledVector(p.v, 0.016);
+        if (el === 'water') p.v.y -= 0.12;
+        if (el === 'nature') {
+          p.v.applyAxisAngle(new THREE.Vector3(0, 1, 0), 0.12);
+          p.v.y -= 0.03;
+        }
+        if (el === 'shadow') p.m.scale.setScalar(1 + t * 2.2);
+        p.m.rotation.x += p.spin;
+        p.m.rotation.y += p.spin;
+      }
+      material.opacity = 1 - t;
+      coreMat.opacity = 1 - t;
+      if (t >= 1) for (const p of parts) this.fxGroup.remove(p.m);
+    });
+  }
+
+  /** A glowing projectile with a light and a fading trail; arrows fly point-first. */
+  private async projectileFx(from: THREE.Vector3, to: THREE.Vector3, el: Element, arc: number, arrow: boolean) {
+    const fx = BattleView.FX[el];
+    const head = arrow
+      ? new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.03, 0.34), new THREE.MeshBasicMaterial({ color: 0xe8dcc0 }))
+      : new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.13, 0.13), new THREE.MeshBasicMaterial({ color: fx.core }));
+    const glow = new THREE.Mesh(
+      new THREE.BoxGeometry(arrow ? 0.08 : 0.24, arrow ? 0.08 : 0.24, arrow ? 0.12 : 0.24),
+      new THREE.MeshBasicMaterial({ color: fx.glow, transparent: true, opacity: 0.45, depthWrite: false }),
+    );
+    head.add(glow);
+    const light = new THREE.PointLight(fx.glow, arrow ? 0.6 : 2.2, 2.5, 1.5);
+    head.add(light);
+    this.fxGroup.add(head);
+    const trailMat = new THREE.MeshBasicMaterial({ color: fx.glow, transparent: true, opacity: 0.6, depthWrite: false });
+    const trail: THREE.Mesh[] = [];
+    const prev = from.clone();
+    const dist = from.distanceTo(to);
+    await this.tween(150 + dist * 65, (t) => {
+      head.position.lerpVectors(from, to, t);
+      head.position.y += Math.sin(t * Math.PI) * arc;
+      if (arrow) head.lookAt(prev.clone().lerp(head.position, 2));
+      else head.rotation.set(t * 9, t * 7, 0);
+      prev.copy(head.position);
+      if (Math.random() < 0.7) {
+        const bit = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.05), trailMat);
+        bit.position.copy(head.position);
+        trail.push(bit);
+        this.fxGroup.add(bit);
+      }
+      for (const b of trail) b.scale.multiplyScalar(0.9);
+    });
+    this.fxGroup.remove(head);
+    for (const b of trail) this.fxGroup.remove(b);
+  }
+
+  /** A blade arc swept in front of the attacker. */
+  private slash(at: THREE.Vector3, facing: number, color: number) {
+    const arc = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.04, 0.08), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, depthWrite: false }));
+    arc.position.copy(at);
+    this.fxGroup.add(arc);
+    void this.tween(220, (t) => {
+      arc.rotation.set(0.6, facing + (t - 0.5) * 2.2, 0.4);
+      (arc.material as THREE.MeshBasicMaterial).opacity = 0.9 * (1 - t);
+      if (t >= 1) this.fxGroup.remove(arc);
+    });
+  }
+
+  /** Full-screen tint for ultimates. */
+  private screenFlash(color: number) {
+    const el = document.createElement('div');
+    el.className = 'screen-flash';
+    el.style.background = `#${color.toString(16).padStart(6, '0')}`;
+    this.tagLayer.appendChild(el);
+    setTimeout(() => el.remove(), 600);
+  }
+
   private async animateAbility(ev: Extract<BattleEvent, { type: 'abilityUsed' }>, state: BattleState) {
     const caster = state.units.find((u) => u.id === ev.unitId);
     const v = this.units.get(ev.unitId);
     if (!caster || !v) return;
     const ability = findAbility(caster.heroId, ev.abilityId);
     const hero = getHero(caster.heroId);
+    const el = hero.element;
+    const fx = BattleView.FX[el];
     const selfCast = ability.target === 'self' || samePos(ev.target, v.pos);
     if (!selfCast) this.face(v, ev.target);
 
     const origin = v.model.root.position.clone().add(new THREE.Vector3(0, 0.55, 0));
     const targetPoint = this.standPoint(ev.target).add(new THREE.Vector3(0, 0.45, 0));
-    const fxColor = hero.palette.accent;
+    const ground = (p: Pos) => this.standPoint(p).add(new THREE.Vector3(0, 0.05, 0));
+
     if (ability.ultimate) {
-      this.shake = 0.12;
-      this.burst(origin, 0xffd166, 22, true);
+      this.screenFlash(fx.glow);
+      this.shake = 0.14;
+      this.impactRing(v.model.root.position, fx.glow, 1.6);
+      this.elementBurst(origin, el, 20);
       await this.tween(380, (t) => {
         v.model.body.position.y = Math.sin(t * Math.PI) * 0.4;
         v.model.body.rotation.y = t * Math.PI * 2;
@@ -861,37 +1126,48 @@ export class BattleView {
 
     if (selfCast) {
       await this.tween(260, (t) => (v.model.body.position.y = Math.sin(t * Math.PI) * 0.18));
-      this.burst(origin, fxColor, 12, true);
+      this.impactRing(v.model.root.position, fx.glow);
+      this.elementBurst(origin, el, 10);
       if (ability.area.kind !== 'single') {
-        for (const p of ev.area) this.burst(this.standPoint(p).add(new THREE.Vector3(0, 0.1, 0)), fxColor, 4, true);
+        for (const p of ev.area) if (!samePos(p, v.pos)) this.impactRing(ground(p), fx.glow, 0.7);
       }
-      return this.wait(120);
+      return this.wait(140);
     }
 
     const melee = ability.range.max <= 1 && ability.target === 'enemy' && !ability.effects.some((e) => e.kind === 'dash');
     if (melee) {
       const dir = targetPoint.clone().sub(origin).setY(0).normalize().multiplyScalar(0.35);
-      await this.tween(120, (t) => v.model.body.position.set(dir.x * easeOut(t), 0, dir.z * easeOut(t)));
-      await this.tween(140, (t) => v.model.body.position.set(dir.x * (1 - t), 0, dir.z * (1 - t)));
+      await this.tween(110, (t) => v.model.body.position.set(dir.x * easeOut(t), 0, dir.z * easeOut(t)));
+      this.slash(targetPoint, v.model.root.rotation.y, ability.id === 'attack' ? 0xffffff : fx.core);
+      if (ability.id !== 'attack') this.elementBurst(targetPoint, el, 8);
+      await this.tween(150, (t) => v.model.body.position.set(dir.x * (1 - t), 0, dir.z * (1 - t)));
       return;
     }
-    if (ability.effects.some((e) => e.kind === 'dash' || e.kind === 'teleport' || e.kind === 'swap')) return;
+    if (ability.effects.some((e) => e.kind === 'dash' || e.kind === 'teleport' || e.kind === 'swap')) {
+      this.elementBurst(origin, el, 8);
+      return;
+    }
 
-    // Ranged / spell: projectile, then a burst over the area.
-    const support = hero.heroClass === 'support' && ability.affects === 'allies';
+    // Ranged / spell: projectile, then impact rings and elemental particles over the area.
+    const support = ability.affects === 'allies';
     await this.tween(140, (t) => (v.model.body.position.y = Math.sin(t * Math.PI) * 0.08));
-    const arc = hero.heroClass === 'ranger' ? 0.6 : 0.25;
+    const arrow = hero.heroClass === 'ranger' && ability.area.kind === 'single';
     if (ability.area.kind === 'line') {
       const end = this.standPoint(ev.area[ev.area.length - 1] ?? ev.target).add(new THREE.Vector3(0, 0.45, 0));
-      await this.projectile(origin, end, fxColor, 0, 0.16);
-    } else if (!support) {
-      await this.projectile(origin, targetPoint, hero.heroClass === 'ranger' ? 0xe8dcc0 : fxColor, arc);
+      await this.projectileFx(origin, end, el, 0, false);
+      for (const p of ev.area) this.elementBurst(ground(p).add(new THREE.Vector3(0, 0.3, 0)), el, 5);
+      return;
     }
+    if (!support) await this.projectileFx(origin, targetPoint, el, hero.heroClass === 'ranger' ? 0.6 : 0.3, arrow);
     if (ability.area.kind !== 'single') {
-      for (const p of ev.area) this.burst(this.standPoint(p).add(new THREE.Vector3(0, 0.15, 0)), fxColor, 5, support);
+      for (const p of ev.area) {
+        this.impactRing(ground(p), support ? 0x7fe0a6 : fx.glow, 0.8);
+        this.elementBurst(ground(p).add(new THREE.Vector3(0, 0.25, 0)), support ? 'nature' : el, 5);
+      }
       this.shake = support ? 0 : 0.08;
-    } else if (support) {
-      this.burst(targetPoint, fxColor, 10, true);
+    } else {
+      this.impactRing(ground(ev.target), support ? 0x7fe0a6 : fx.glow, 0.8);
+      this.elementBurst(targetPoint, support ? 'light' : el, support ? 8 : 10);
     }
   }
 
