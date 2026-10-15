@@ -40,7 +40,8 @@ function box(parent: THREE.Object3D, w: number, h: number, d: number, x: number,
 
 export interface HeroModel {
   root: THREE.Group; // positioned on the tile
-  body: THREE.Group; // animated (hop, lunge, flash)
+  body: THREE.Group; // animated by actions (hop, lunge, flash)
+  idle: THREE.Group; // breathing / sway, inside body
   ring: THREE.Mesh;
   meshes: THREE.Mesh[];
 }
@@ -69,35 +70,60 @@ export function buildHeroModel(heroId: string, side: Side, skin: SkinId = 'class
   const p = skinPalette(hero.palette, skin);
   const team = TEAM_COLOR[side];
   const root = new THREE.Group();
-  const body = new THREE.Group();
-  root.add(body);
+  const act = new THREE.Group();
+  const body = new THREE.Group(); // every voxel goes here; `act` moves it for actions
+  root.add(act);
+  act.add(body);
 
-  // Team base
-  const ring = new THREE.Mesh(boxGeo(0.78, 0.04, 0.78), new THREE.MeshLambertMaterial({ color: team, transparent: true, opacity: 0.85 }));
+  // Team base: a bevelled plate with a brighter rim.
+  const ring = new THREE.Mesh(boxGeo(0.8, 0.04, 0.8), new THREE.MeshLambertMaterial({ color: shade(team, 0.75), transparent: true, opacity: 0.9 }));
   ring.position.y = 0.02;
   ring.receiveShadow = true;
   root.add(ring);
+  const rim = new THREE.Mesh(boxGeo(0.66, 0.05, 0.66), new THREE.MeshLambertMaterial({ color: team, emissive: team, emissiveIntensity: 0.25 }));
+  rim.position.y = 0.0;
+  ring.add(rim);
 
   const dark = 0x2a2522;
-  // Legs & boots
-  box(body, 0.12, 0.18, 0.14, -0.08, 0.04, 0, p.secondary);
-  box(body, 0.12, 0.18, 0.14, 0.08, 0.04, 0, p.secondary);
-  box(body, 0.13, 0.06, 0.16, -0.08, 0.04, 0.01, dark);
-  box(body, 0.13, 0.06, 0.16, 0.08, 0.04, 0.01, dark);
-  // Torso
+  const skinShade = shade(p.skin, 0.82);
+  // Legs, knees and boots with soles and toe caps
+  for (const x of [-0.08, 0.08]) {
+    box(body, 0.12, 0.16, 0.14, x, 0.06, 0, shade(p.secondary, 0.9));
+    box(body, 0.13, 0.03, 0.15, x, 0.13, 0.002, shade(p.secondary, 0.7)); // knee band
+    box(body, 0.13, 0.07, 0.16, x, 0.02, 0.01, dark); // boot
+    box(body, 0.13, 0.02, 0.17, x, 0.0, 0.015, 0x15110f); // sole
+    box(body, 0.12, 0.03, 0.03, x, 0.05, 0.085, shade(dark, 1.6)); // toe cap
+  }
+  // Torso: tunic with a lighter front panel, collar, belt and buckle
   box(body, 0.34, 0.28, 0.22, 0, 0.22, 0, p.primary);
+  box(body, 0.16, 0.24, 0.01, 0, 0.24, 0.111, shade(p.primary, 1.15));
+  box(body, 0.22, 0.04, 0.2, 0, 0.47, 0, shade(p.primary, 0.8)); // collar
   box(body, 0.35, 0.05, 0.23, 0, 0.24, 0, p.secondary); // belt
-  // Cape in team colour
-  box(body, 0.32, 0.36, 0.04, 0, 0.12, -0.13, team);
-  // Arms
-  box(body, 0.1, 0.24, 0.12, -0.22, 0.24, 0, p.primary);
-  box(body, 0.1, 0.24, 0.12, 0.22, 0.24, 0, p.primary);
-  box(body, 0.1, 0.06, 0.12, -0.22, 0.2, 0, p.skin);
-  box(body, 0.1, 0.06, 0.12, 0.22, 0.2, 0, p.skin);
-  // Head
+  box(body, 0.06, 0.05, 0.01, 0, 0.24, 0.117, p.accent, shade(p.accent, 0.25)); // buckle
+  // Cape in team colour: two panels and a darker hem
+  box(body, 0.32, 0.22, 0.04, 0, 0.26, -0.13, team);
+  box(body, 0.3, 0.16, 0.04, 0, 0.1, -0.15, shade(team, 0.92));
+  box(body, 0.3, 0.03, 0.045, 0, 0.08, -0.15, shade(team, 0.6));
+  // Shoulders, sleeves and hands
+  for (const sx of [-1, 1]) {
+    box(body, 0.13, 0.07, 0.15, sx * 0.22, 0.44, 0, p.secondary); // pauldron
+    box(body, 0.1, 0.13, 0.12, sx * 0.22, 0.32, 0, p.primary); // upper arm
+    box(body, 0.105, 0.08, 0.125, sx * 0.22, 0.25, 0, shade(p.primary, 0.85)); // sleeve
+    box(body, 0.1, 0.06, 0.12, sx * 0.22, 0.2, 0, p.skin); // hand
+  }
+  // Head: face, ears, eyes with highlights, brows, nose and mouth
   box(body, 0.28, 0.26, 0.26, 0, 0.5, 0, p.skin);
-  box(body, 0.05, 0.05, 0.02, -0.07, 0.6, 0.13, dark); // eyes
-  box(body, 0.05, 0.05, 0.02, 0.07, 0.6, 0.13, dark);
+  box(body, 0.03, 0.07, 0.06, -0.15, 0.58, 0, skinShade); // ears
+  box(body, 0.03, 0.07, 0.06, 0.15, 0.58, 0, skinShade);
+  for (const ex of [-0.07, 0.07]) {
+    box(body, 0.06, 0.06, 0.02, ex, 0.59, 0.128, 0xf4efe6); // eye white
+    box(body, 0.035, 0.05, 0.02, ex + (ex < 0 ? 0.01 : -0.01), 0.59, 0.136, 0x1d1a24); // pupil
+    box(body, 0.015, 0.015, 0.01, ex + (ex < 0 ? 0.018 : -0.002), 0.625, 0.147, 0xffffff); // glint
+    box(body, 0.07, 0.015, 0.02, ex, 0.66, 0.13, shade(p.hair, 0.8)); // brow
+  }
+  box(body, 0.04, 0.04, 0.03, 0, 0.55, 0.14, skinShade); // nose
+  box(body, 0.07, 0.015, 0.01, 0, 0.525, 0.133, shade(p.skin, 0.55)); // mouth
+  box(body, 0.29, 0.06, 0.27, 0, 0.7, 0, p.hair); // hair cap (hats and hoods cover it)
 
   switch (heroId) {
     case 'brann':
@@ -209,10 +235,10 @@ export function buildHeroModel(heroId: string, side: Side, skin: SkinId = 'class
   if (skin === 'veteran') box(body, 0.36, 0.04, 0.24, 0, 0.47, 0, 0xd9a441, 0x6a4a10); // gilded collar
 
   const meshes: THREE.Mesh[] = [];
-  body.traverse((o) => {
+  act.traverse((o) => {
     if (o instanceof THREE.Mesh) meshes.push(o);
   });
-  return { root, body, ring, meshes };
+  return { root, body: act, idle: body, ring, meshes };
 }
 
 let portraitRig: { renderer: THREE.WebGLRenderer; scene: THREE.Scene; cam: THREE.OrthographicCamera } | null = null;

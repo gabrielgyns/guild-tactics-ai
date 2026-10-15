@@ -1472,3 +1472,7 @@ table.stats-table {
 .locked-strip .lock { color: var(--parchment); }
 .locked-strip .btn { margin-left: auto; padding: 4px 10px; font-size: 12.5px; }
 .new-badge { background: var(--brass); color: #1d1406; padding: 1px 6px; border-radius: 3px; margin-left: 6px; letter-spacing: 0.04em; }
+
+.screen-flash { position: absolute; inset: 0; opacity: 0; pointer-events: none; mix-blend-mode: screen; animation: flash 0.55s ease-out; }
+@keyframes flash { 0% { opacity: 0.55; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .screen-flash { display: none; } }
