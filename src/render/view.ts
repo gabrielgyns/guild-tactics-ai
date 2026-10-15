@@ -148,8 +148,8 @@ export class BattleView {
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
     const sc = sun.shadow.camera;
-    sc.left = sc.bottom = -6;
-    sc.right = sc.top = 6;
+    sc.left = sc.bottom = -8;
+    sc.right = sc.top = 8;
     sun.shadow.bias = -0.0008;
     sun.shadow.normalBias = 0.02;
     this.scene.add(sun);
@@ -548,7 +548,9 @@ export class BattleView {
     this.renderer.domElement.style.width = '100%';
     this.renderer.domElement.style.height = '100%';
     const aspect = w / h;
-    const halfH = Math.max(4.1, 5.0 / aspect);
+    // Fit the board: scale with its size (6×6 was the original framing).
+    const size = Math.max(this.board?.width ?? 6, this.board?.height ?? 6) / 6;
+    const halfH = Math.max(4.1, 5.0 / aspect) * size;
     this.camera.left = -halfH * aspect;
     this.camera.right = halfH * aspect;
     this.camera.top = halfH;

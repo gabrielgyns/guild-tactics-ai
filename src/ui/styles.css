@@ -1421,7 +1421,7 @@ table.stats-table {
 .friends li, .replays li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .friends .btn, .replays .btn { padding: 4px 9px; font-size: 12.5px; }
 .def-board { display: grid; gap: 4px; justify-content: start; }
-.def-row { display: grid; grid-template-columns: 48px repeat(6, 54px); gap: 4px; align-items: center; font-size: 12px; }
+.def-row { display: grid; grid-template-columns: 48px repeat(var(--cols, 6), 54px); gap: 4px; align-items: center; font-size: 12px; }
 .def-cell { width: 54px; height: 54px; border: 1px solid var(--line-hi); border-radius: var(--radius); background: #1f3a26; cursor: pointer; padding: 0; color: var(--muted); }
 .def-cell img { width: 48px; height: 48px; }
 .def-cell.blocked { background: #2a2f36; cursor: not-allowed; }
@@ -1431,7 +1431,7 @@ table.stats-table {
 .draft-hero.small img { width: 44px; height: 44px; }
 .draft-hero.in { border-color: var(--ally); }
 @media (max-width: 760px) {
-  .def-row { grid-template-columns: 40px repeat(6, minmax(0, 1fr)); }
+  .def-row { grid-template-columns: 40px repeat(var(--cols, 6), minmax(0, 1fr)); }
   .def-cell { width: 100%; height: auto; aspect-ratio: 1; max-width: 100%; }
   .def-cell img { width: 90%; height: auto; }
   .fronts { grid-template-columns: minmax(0, 1fr); }

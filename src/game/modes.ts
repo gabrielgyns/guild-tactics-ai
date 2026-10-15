@@ -1,5 +1,5 @@
 import type { Deployment } from '../domain/battle';
-import { buildBoard, MAPS } from '../domain/board';
+import { buildBoard, findMap, MAPS } from '../domain/board';
 import { dailyChallenge } from '../domain/daily';
 import { autoDeploy } from '../domain/deploy';
 import { aiDraftPick, available, DRAFT_ORDER, draftPick, draftSide, draftStep, newDraft, type DraftState } from '../domain/draft';
@@ -36,7 +36,7 @@ import {
   type DefenseSlot,
   type GuildWar,
 } from '../domain/arena';
-import { isWalkable } from '../domain/board';
+import { centreOut, isWalkable } from '../domain/board';
 import { mulberry32 } from '../domain/rng';
 import { renderGuildHall } from '../render/models';
 import { teamTraits } from '../domain/traits';
@@ -301,7 +301,7 @@ export class Modes {
         return `<li class="exp-node ${state}${st.elite ? ' elite' : ''}">
           <span class="exp-dot">${i < e.stage ? '✓' : i + 1}</span>
           <span class="exp-name">${esc(st.name)}${st.elite ? ' <span class="chip">elite</span>' : ''}</span>
-          ${state === 'current' ? `<span class="exp-foes">${this.faces(st.enemies.map((x) => x.heroId), 'enemy')}</span><span class="exp-map">${esc(MAPS.find((m) => m.id === st.mapId)!.name)} · inimigos ${bonusText(st.enemies[0].bonus) || 'normais'}</span>` : ''}
+          ${state === 'current' ? `<span class="exp-foes">${this.faces(st.enemies.map((x) => x.heroId), 'enemy')}</span><span class="exp-map">${esc(findMap(st.mapId)!.name)} · inimigos ${bonusText(st.enemies[0].bonus) || 'normais'}</span>` : ''}
         </li>`;
       })
       .join('');
@@ -408,7 +408,7 @@ export class Modes {
 
   private fightStage(e: ExpeditionState) {
     const stage = e.stages[e.stage];
-    const map = MAPS.find((m) => m.id === stage.mapId)!;
+    const map = findMap(stage.mapId)!;
     const board = buildBoard(map);
     this.game.launch({
       kind: 'expedition',
@@ -1014,7 +1014,7 @@ export class Modes {
             <label class="field">Nome <input id="ar-name" maxlength="24" value="${esc(g.name)}" /></label>
             <div class="field">Estandarte <div class="swatches">${swatches}</div></div>
             <h3 class="eyebrow">Defesa</h3>
-            <p class="muted">Quem te atacar enfrenta esta formação em ${esc(MAPS.find((m) => m.id === def.mapId)!.name)}.</p>
+            <p class="muted">Quem te atacar enfrenta esta formação em ${esc(findMap(def.mapId)!.name)}.</p>
             <div class="faces">${this.faces(def.slots.map((x) => x.heroId))}</div>
             <div class="row-btns"><button class="btn" id="ar-edit">Editar defesa</button> <button class="btn" id="ar-copy">Copiar código</button></div>
             <textarea id="ar-code" readonly rows="2" aria-label="Código da tua defesa">${code}</textarea>
@@ -1103,7 +1103,7 @@ export class Modes {
     this.el.querySelectorAll<HTMLElement>('[data-replay]').forEach((n) =>
       n.addEventListener('click', () => {
         const r = (loadRaw<Replay[]>('replays') ?? [])[Number(n.dataset.replay)];
-        if (r) this.game.watchReplay(r, MAPS.find((m) => m.id === r.mapId)!, () => this.showArena());
+        if (r) this.game.watchReplay(r, findMap(r.mapId)!, () => this.showArena());
       }),
     );
   }
@@ -1239,11 +1239,11 @@ export class Modes {
                 ? 'Guilda real'
                 : 'Liga da semana',
       title: `Atacar ${defense.guild}`,
-      intro: `Defesa: ${defense.slots.map((x) => getHero(x.heroId).name).join(', ')} em ${MAPS.find((m) => m.id === defense.mapId)!.name}. Escolhe quatro heróis para os vencer.`,
+      intro: `Defesa: ${defense.slots.map((x) => getHero(x.heroId).name).join(', ')} em ${findMap(defense.mapId)!.name}. Escolhe quatro heróis para os vencer.`,
       confirmLabel: 'Posicionar ›',
       showDifficulty: false,
       onConfirm: (team) => {
-        const map = MAPS.find((m) => m.id === defense.mapId)!;
+        const map = findMap(defense.mapId)!;
         const board = buildBoard(map);
         this.game.launch({
           kind: 'arena',
@@ -1302,7 +1302,7 @@ export class Modes {
     let d: Defense = structuredClone(start);
     let selected: number | null = null;
     const render = (msg = '') => {
-      const map = MAPS.find((m) => m.id === d.mapId)!;
+      const map = findMap(d.mapId)!;
       const board = buildBoard(map);
       const cell = (x: number, row: 0 | 1) => {
         const slot: DefenseSlot = { heroId: '', x, row };
@@ -1312,7 +1312,7 @@ export class Modes {
         return `<button class="def-cell${walk ? '' : ' blocked'}${idx === selected && idx >= 0 ? ' sel' : ''}" data-cell="${x},${row}" ${walk ? '' : 'disabled'}>
           ${who ? `<img alt="${esc(getHero(who.heroId).name)}" src="${this.game.portrait(who.heroId)}" />` : walk ? '' : '▩'}</button>`;
       };
-      const rows = ([1, 0] as const).map((row) => `<div class="def-row"><span class="muted">${row === 1 ? 'Frente' : 'Trás'}</span>${[0, 1, 2, 3, 4, 5].map((x) => cell(x, row)).join('')}</div>`).join('');
+      const rows = ([1, 0] as const).map((row) => `<div class="def-row" style="--cols:${board.width}"><span class="muted">${row === 1 ? 'Frente' : 'Trás'}</span>${[...Array(board.width).keys()].map((x) => cell(x, row)).join('')}</div>`).join('');
       const pool = HEROES.map(
         (h) => `<button class="draft-hero small${d.slots.some((s) => s.heroId === h.id) ? ' in' : ''}" data-dhero="${h.id}"><img alt="" src="${this.game.portrait(h.id)}" /><b>${esc(h.name)}</b></button>`,
       ).join('');
@@ -1337,12 +1337,12 @@ export class Modes {
           const g = this.guild();
           // Re-seat the same heroes on the new map's free cells.
           const fresh = generateDefense(mulberry32(1), g.name, g.color);
-          const target = MAPS.find((m) => m.id === n.dataset.map)!;
+          const target = findMap(n.dataset.map!)!;
           const b = buildBoard(target);
           const used = new Set<string>();
           const slots = d.slots.map((s) => {
             for (const row of [s.row, s.row === 1 ? 0 : 1] as (0 | 1)[])
-              for (const x of [s.x, 2, 3, 1, 4, 0, 5]) {
+              for (const x of [s.x, ...centreOut(b.width)]) {
                 const k = `${x},${row}`;
                 if (!used.has(k) && isWalkable(b, defenseCell({ heroId: s.heroId, x, row }))) {
                   used.add(k);

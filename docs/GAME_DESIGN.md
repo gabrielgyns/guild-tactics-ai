@@ -32,7 +32,7 @@ O código separa o **domínio** (regras puras em TypeScript, sem DOM nem 3D) da 
 | --- | --- | --- |
 | `HeroDef` | `src/domain/heroes.ts` | Dados estáticos: classe, atributos, ataque básico, 3 habilidades. |
 | `Ability` / `Effect` | `src/domain/types.ts` | Uma habilidade é alcance + regra de alvo + área + lista de efeitos. |
-| `Board` / `Terrain` | `src/domain/board.ts` | Tabuleiro 6×6, mapas simétricos (rotação de 180°). |
+| `Board` / `Terrain` | `src/domain/board.ts` | Tabuleiro 8×8 (era 6×6 no primeiro slice), 4 mapas simétricos (rotação de 180°); os mapas 6×6 antigos ficam só para carregar expedições, defesas e replays guardados. |
 | `Unit` | `src/domain/types.ts` | Estado de combate de um herói: vida, escudo, estados, recargas. |
 | `BattleState` | `src/domain/battle.ts` | Unidades, ronda, fila de turnos, turno ativo, vencedor. |
 | `Command` → `BattleEvent[]` | `src/domain/battle.ts` | Cada comando valida-se e devolve eventos; a vista anima os eventos. |

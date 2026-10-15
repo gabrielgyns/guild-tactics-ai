@@ -1,5 +1,5 @@
 import type { Deployment } from './battle';
-import { MAPS, buildBoard, isWalkable } from './board';
+import { MAPS, buildBoard, findMap, isWalkable } from './board';
 import { HEROES, getHero } from './heroes';
 import { hashString, mulberry32, pick, shuffled, type Rng } from './rng';
 import type { HeroClass } from './types';
@@ -27,7 +27,7 @@ export interface Defense {
 export function validateDefense(d: Defense): string | null {
   if (!d || typeof d.guild !== 'string' || !d.guild.trim()) return 'Falta o nome da guilda.';
   if (d.guild.length > 24) return 'Nome da guilda demasiado longo.';
-  const map = MAPS.find((m) => m.id === d.mapId);
+  const map = findMap(d.mapId);
   if (!map) return 'Mapa desconhecido.';
   if (!Array.isArray(d.slots) || d.slots.length !== 4) return 'Uma defesa tem exatamente 4 heróis.';
   const board = buildBoard(map);
@@ -37,7 +37,7 @@ export function validateDefense(d: Defense): string | null {
     if (!HEROES.some((h) => h.id === s.heroId)) return `Herói desconhecido: ${s.heroId}.`;
     if (ids.has(s.heroId)) return 'Heróis repetidos.';
     ids.add(s.heroId);
-    if (!Number.isInteger(s.x) || s.x < 0 || s.x > 5 || (s.row !== 0 && s.row !== 1)) return 'Posição inválida.';
+    if (!Number.isInteger(s.x) || s.x < 0 || s.x >= board.width || (s.row !== 0 && s.row !== 1)) return 'Posição inválida.';
     if (!isWalkable(board, defenseCell(s))) return 'Um herói está numa casa intransponível.';
     const k = `${s.x},${s.row}`;
     if (cells.has(k)) return 'Dois heróis na mesma casa.';
@@ -113,7 +113,7 @@ export function generateDefense(rng: Rng, guild: string, color: number): Defense
   const slots: DefenseSlot[] = heroes.map((heroId) => {
     const front = getHero(heroId).heroClass === 'warrior';
     for (const row of front ? [1, 0] : [0, 1]) {
-      for (const x of shuffled(rng, [0, 1, 2, 3, 4, 5])) {
+      for (const x of shuffled(rng, [...Array(board.width).keys()])) {
         const s = { heroId, x, row: row as 0 | 1 };
         const k = `${x},${row}`;
         if (!used.has(k) && isWalkable(board, defenseCell(s))) {
