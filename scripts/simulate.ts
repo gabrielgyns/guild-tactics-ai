@@ -19,11 +19,11 @@ for (let m = 0; m < N; m++) {
   const board = buildBoard(MAPS[m % MAPS.length]);
   const spots = (rows: number[]) => {
     const out = [];
-    for (const y of rows) for (let x = 0; x < 6; x++) if (board.tiles[y][x] === 'plain') out.push({ x, y });
+    for (const y of rows) for (let x = 0; x < board.width; x++) if (board.tiles[y][x] === 'plain') out.push({ x, y });
     return out.sort(() => Math.random() - 0.5);
   };
   const P = pick(), E = pick();
-  const pp = spots([5, 4]), ep = spots([0, 1]);
+  const pp = spots([board.height - 1, board.height - 2]), ep = spots([0, 1]);
   const s = createBattle(board, applyTraits(P.map((heroId, i) => ({ heroId, pos: pp[i] }))), applyTraits(E.map((heroId, i) => ({ heroId, pos: ep[i] })))).state;
   let timeout = false;
   while (!s.winner) {

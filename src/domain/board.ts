@@ -86,30 +86,53 @@ export interface MapDef {
 }
 
 // All maps are point-symmetric (rotate 180°) so both sides start on equal terms.
+// 8×8: room to manoeuvre, two shrines in the middle, deployment on the two back rows of each side.
 export const MAPS: MapDef[] = [
   {
-    id: 'mill',
+    id: 'mill8',
     name: 'Ribeiro do Moinho',
-    rows: ['..F..H', '.R..F.', 'W.SH.W', 'W.HS.W', '.F..R.', 'H..F..'],
+    rows: ['..F...H.', '.R...F..', '...H..R.', 'WW.S.WWW', 'WWW.S.WW', '.R..H...', '..F...R.', '.H...F..'],
   },
   {
-    id: 'ruins',
+    id: 'ruins8',
     name: 'Ruínas da Atalaia',
-    rows: ['...R..', 'F.H..F', '.RS.F.', '.F.SR.', 'F..H.F', '..R...'],
+    rows: ['...R....', '.F..H..F', '..R..F..', 'H...S.R.', '.R.S...H', '..F..R..', 'F..H..F.', '....R...'],
   },
   {
-    id: 'ford',
+    id: 'ford8',
     name: 'Vau dos Salgueiros',
-    rows: ['.F....', '...H.R', 'WW.SF.', '.FS.WW', 'R.H...', '....F.'],
+    rows: ['.F......', '...H..R.', 'WW...F..', '.WW.S..F', 'F..S.WW.', '..F...WW', '.R..H...', '......F.'],
+  },
+  {
+    id: 'grove8',
+    name: 'Bosque Cerrado',
+    rows: ['F......F', '..F.R...', '.FF..FH.', '......S.', '.S......', '.HF..FF.', '...R.F..', 'F......F'],
   },
 ];
+
+/** The original 6×6 maps, kept so saved expeditions, defenses and replays still load. */
+export const LEGACY_MAPS: MapDef[] = [
+  { id: 'mill', name: 'Ribeiro do Moinho (6×6)', rows: ['..F..H', '.R..F.', 'W.SH.W', 'W.HS.W', '.F..R.', 'H..F..'] },
+  { id: 'ruins', name: 'Ruínas da Atalaia (6×6)', rows: ['...R..', 'F.H..F', '.RS.F.', '.F.SR.', 'F..H.F', '..R...'] },
+  { id: 'ford', name: 'Vau dos Salgueiros (6×6)', rows: ['.F....', '...H.R', 'WW.SF.', '.FS.WW', 'R.H...', '....F.'] },
+];
+
+export function findMap(id: string): MapDef | undefined {
+  return MAPS.find((m) => m.id === id) ?? LEGACY_MAPS.find((m) => m.id === id);
+}
 
 export function buildBoard(map: MapDef): Board {
   const tiles = map.rows.map((row) => row.split('').map((c) => LEGEND[c] ?? 'plain'));
   return { width: tiles[0].length, height: tiles.length, name: map.name, tiles };
 }
 
-export const DEPLOY_ROWS: Record<'player' | 'enemy', number[]> = {
-  player: [4, 5],
-  enemy: [0, 1],
-};
+/** Deployment rows: the two back rows on each side. */
+export function deployRows(board: Board, side: 'player' | 'enemy'): number[] {
+  return side === 'player' ? [board.height - 2, board.height - 1] : [0, 1];
+}
+
+/** Columns ordered from the centre outwards (used to spread a formation). */
+export function centreOut(width: number): number[] {
+  const mid = (width - 1) / 2;
+  return [...Array(width).keys()].sort((a, b) => Math.abs(a - mid) - Math.abs(b - mid) || a - b);
+}

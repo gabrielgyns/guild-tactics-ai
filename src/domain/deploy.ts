@@ -1,5 +1,5 @@
 import type { Deployment } from './battle';
-import { DEPLOY_ROWS, isWalkable, posKey } from './board';
+import { centreOut, deployRows, isWalkable, posKey } from './board';
 import { getHero } from './heroes';
 import type { Board, Pos, Side } from './types';
 
@@ -8,11 +8,11 @@ import type { Board, Pos, Side } from './types';
  * filling the centre columns first. Keeps any bonuses already on the deployments.
  */
 export function autoDeploy(board: Board, team: Omit<Deployment, 'pos'>[], side: Side): Deployment[] {
-  const [a, b] = DEPLOY_ROWS[side];
+  const [a, b] = deployRows(board, side);
   const front = side === 'player' ? Math.min(a, b) : Math.max(a, b);
   const back = side === 'player' ? Math.max(a, b) : Math.min(a, b);
   const taken = new Set<string>();
-  const order = [2, 3, 1, 4, 0, 5];
+  const order = centreOut(board.width);
   const spot = (row: number, other: number): Pos => {
     for (const r of [row, other])
       for (const x of order) {

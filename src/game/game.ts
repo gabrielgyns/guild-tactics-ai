@@ -23,7 +23,7 @@ import {
 import { autoDeploy } from '../domain/deploy';
 import { puzzleFailed } from '../domain/puzzles';
 import { analyzeMatch } from '../domain/analysis';
-import { DEPLOY_ROWS, MAPS, TERRAIN_HINT, TERRAIN_LABEL, buildBoard, isWalkable, posKey, samePos, terrainAt } from '../domain/board';
+import { deployRows, MAPS, TERRAIN_HINT, TERRAIN_LABEL, buildBoard, isWalkable, posKey, samePos, terrainAt } from '../domain/board';
 import { CLASS_GLYPH, CLASS_LABEL, HEROES, findAbility, getHero, heroAbilities } from '../domain/heroes';
 import type { Ability, Element, BattleEvent, BattleState, Board, Command, HeroClass, Pos, Side, Unit } from '../domain/types';
 import type { MapDef } from '../domain/board';
@@ -683,7 +683,7 @@ export class Game {
     this.view.syncUnits(s);
     this.view.setActive(null);
     const hl = new Map<string, HighlightKind>();
-    for (const y of DEPLOY_ROWS.player)
+    for (const y of deployRows(this.board, 'player'))
       for (let x = 0; x < this.board.width; x++) if (isWalkable(this.board, { x, y })) hl.set(posKey({ x, y }), 'deploy');
     if (this.deploySelected !== null) hl.set(posKey(this.playerDeploy[this.deploySelected].pos), 'select');
     this.view.setHighlights(hl);
@@ -724,7 +724,7 @@ export class Game {
 
   private deployClick(p: Pos) {
     const idx = this.playerDeploy.findIndex((d) => samePos(d.pos, p));
-    const inZone = DEPLOY_ROWS.player.includes(p.y) && isWalkable(this.board, p);
+    const inZone = deployRows(this.board, 'player').includes(p.y) && isWalkable(this.board, p);
     if (this.deploySelected === null) {
       if (idx >= 0) this.deploySelected = idx;
     } else if (idx === this.deploySelected) {

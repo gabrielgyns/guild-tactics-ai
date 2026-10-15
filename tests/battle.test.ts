@@ -321,10 +321,10 @@ describe('full matches (AI vs AI)', () => {
       const board = buildBoard(map);
       const spots = (rows: number[]) => {
         const out = [];
-        for (const y of rows) for (let x = 0; x < 6; x++) if (board.tiles[y][x] === 'plain') out.push({ x, y });
+        for (const y of rows) for (let x = 0; x < board.width; x++) if (board.tiles[y][x] === 'plain') out.push({ x, y });
         return out;
       };
-      const pp = spots([5, 4]);
+      const pp = spots([board.height - 1, board.height - 2]);
       const ep = spots([0, 1]);
       const s = createBattle(
         board,
