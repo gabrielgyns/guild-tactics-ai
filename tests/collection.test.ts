@@ -6,8 +6,8 @@ import type { Unit } from '../src/domain/types';
 
 describe('roster', () => {
   it('has three heroes per class and every hero is complete', () => {
-    expect(HEROES).toHaveLength(12);
-    for (const cls of ['warrior', 'ranger', 'mage', 'support']) expect(HEROES.filter((h) => h.heroClass === cls)).toHaveLength(3);
+    expect(HEROES).toHaveLength(16);
+    for (const cls of ['warrior', 'ranger', 'mage', 'support']) expect(HEROES.filter((h) => h.heroClass === cls)).toHaveLength(4);
     for (const h of HEROES) {
       expect(h.abilities).toHaveLength(3);
       expect(h.ultimate.ultimate).toBe(true);

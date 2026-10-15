@@ -220,6 +220,40 @@ export function buildHeroModel(heroId: string, side: Side, skin: SkinId = 'class
       box(body, 0.14, 0.18, 0.14, 0.3, 0.24, 0.14, p.secondary); // conch
       box(body, 0.08, 0.08, 0.08, 0.3, 0.42, 0.14, p.accent, 0x2f8f9d);
       break;
+    case 'torva':
+      box(body, 0.3, 0.1, 0.28, 0, 0.72, -0.02, p.hair); // braided bun
+      box(body, 0.12, 0.12, 0.12, 0, 0.8, -0.1, p.hair);
+      box(body, 0.34, 0.26, 0.05, 0, 0.18, 0.115, 0x5b4636); // leather apron
+      box(body, 0.05, 0.46, 0.05, 0.3, 0.08, 0.12, 0x5b4636); // forge hammer
+      box(body, 0.24, 0.16, 0.16, 0.3, 0.52, 0.12, 0x4a4a52);
+      box(body, 0.1, 0.1, 0.17, 0.3, 0.55, 0.12, p.accent, 0xff5a10); // glowing face of the hammer
+      break;
+    case 'elio':
+      box(body, 0.3, 0.08, 0.28, 0, 0.72, 0, p.hair);
+      box(body, 0.42, 0.03, 0.06, 0, 0.84, 0, p.accent, 0xb08a20); // sun crest
+      box(body, 0.06, 0.16, 0.06, 0, 0.8, 0, p.accent, 0xb08a20);
+      box(body, 0.05, 0.1, 0.05, -0.32, 0.56, 0.06, p.secondary); // longbow
+      box(body, 0.05, 0.12, 0.05, -0.32, 0.46, 0.1, p.secondary);
+      box(body, 0.05, 0.18, 0.05, -0.32, 0.3, 0.12, p.accent);
+      box(body, 0.05, 0.12, 0.05, -0.32, 0.18, 0.1, p.secondary);
+      box(body, 0.05, 0.1, 0.05, -0.32, 0.08, 0.06, p.secondary);
+      box(body, 0.1, 0.3, 0.1, 0.12, 0.3, -0.16, p.secondary); // quiver
+      break;
+    case 'vesper':
+      box(body, 0.34, 0.22, 0.32, 0, 0.62, -0.02, p.primary); // deep hood
+      box(body, 0.24, 0.06, 0.04, 0, 0.66, 0.15, p.secondary);
+      box(body, 0.36, 0.14, 0.3, 0, 0.04, 0, p.primary); // robe hem
+      box(body, 0.14, 0.14, 0.14, -0.3, 0.42, 0.12, p.accent, 0x6a3ab0); // floating shadow orb
+      box(body, 0.08, 0.08, 0.08, -0.36, 0.56, 0.08, p.hair, 0x4a1a90);
+      break;
+    case 'tilda':
+      box(body, 0.34, 0.08, 0.32, 0, 0.72, 0, p.primary); // leaf shawl hood
+      box(body, 0.3, 0.12, 0.06, 0, 0.62, -0.15, p.hair); // grey hair
+      box(body, 0.36, 0.14, 0.26, 0, 0.36, 0, p.primary); // mossy shawl
+      box(body, 0.06, 0.6, 0.06, 0.3, 0.04, 0.12, 0x6b4a2b); // walking staff
+      box(body, 0.14, 0.12, 0.14, 0.3, 0.64, 0.12, 0x3f7a3a); // leafy top
+      box(body, 0.06, 0.06, 0.06, 0.3, 0.76, 0.12, p.accent, 0x3a7a20);
+      break;
     case 'orrin':
       box(body, 0.32, 0.1, 0.3, 0, 0.72, 0, p.primary); // cap
       box(body, 0.04, 0.24, 0.1, 0.12, 0.76, -0.08, p.accent); // feather
