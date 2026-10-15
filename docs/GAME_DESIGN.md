@@ -70,11 +70,11 @@ Vantagem: **×1,3** de dano; desvantagem: **×0,8**. O elemento é do herói (to
 
 | Elemento | Heróis |
 | --- | --- |
-| 🔥 Fogo | Kael, Seren |
+| 🔥 Fogo | Kael, Seren, Torva |
 | 💧 Água | Tobin, Vex, Maris |
-| 🌿 Natureza | Brann, Lyra, Fenna |
-| ☀ Luz | Mira, Dagna |
-| ☾ Sombra | Orrin, Nyx |
+| 🌿 Natureza | Brann, Lyra, Fenna, Tilda |
+| ☀ Luz | Mira, Dagna, Elio |
+| ☾ Sombra | Orrin, Nyx, Vesper |
 
 ### Terreno
 | Terreno | Movimento | Efeito |
@@ -125,6 +125,10 @@ Enfraquecido (−30% de dano causado), Fortalecido (+ATQ), Em guarda (−50% de 
 | Nyx | Arqueiro (assassina) | 19 | 10 | 2 | 4 | 9 | 1–3 | Passo Sombrio*, Lâmina Envenenada, Golpe nas Costas |
 | Fenna | Mago (druida) | 21 | 9 | 2 | 3 | 5 | 1–3 m | Silvado, Rebento, Chicote de Vinha |
 | Maris | Suporte (maré) | 23 | 7 | 3 | 3 | 6 | 1–2 m | Ressaca, Onda Purificadora, Bolha* |
+| Torva | Guerreiro (forjadora) | 31 | 10 | 5 | 3 | 4 | 1 | Martelada Incandescente, Fole*, Onda de Choque |
+| Elio | Arqueiro (arauto do sol) | 21 | 8 | 3 | 3 | 7 | 2–4 | Seta Ofuscante, Raio de Sol, Bênção da Alvorada |
+| Vesper | Mago (sombras) | 19 | 10 | 1 | 3 | 6 | 1–3 m | Maldição, Lança Sombria, Lodo Sombrio |
+| Tilda | Suporte (bosque) | 26 | 6 | 4 | 3 | 5 | 1–2 m | Casca de Carvalho, Esporos, Seiva |
 
 `*` ação rápida · `m` ataque mágico. Todos têm também **Atacar**, **Defender** e um **supremo**.
 
@@ -221,7 +225,7 @@ Ordem proposta (de trás para a frente: cada camada só entra se a anterior pren
 
 1. **Clareza e profundidade do combate** — zona de ameaça ✅, energia e supremos ✅, elementos ✅, santuários (objetivo de mapa) ✅, tutorial guiado ✅, som e zoom ✅.
 2. **Rejogabilidade** — modo Expedição ✅, desafio diário ✅, draft com bloqueios ✅, puzzles táticos ✅, Salão da Guilda (menu) ✅.
-3. **Coleção e identidade** — 12 heróis ✅, traços de guilda ✅, maestria com insígnias e visuais ✅, ecrã de Coleção ✅, fortaleza voxel no Salão ✅. Vínculos entre heróis ✅, especializações (evolução de classe) ✅, equipamento com espólio e inventário ✅.
+3. **Coleção e identidade** — 16 heróis ✅, traços de guilda ✅, maestria com insígnias e visuais ✅, ecrã de Coleção ✅, fortaleza voxel no Salão ✅. Vínculos entre heróis ✅, especializações (evolução de classe) ✅, equipamento com espólio e inventário ✅.
 4. **Fortaleza da guilda** — ouro, 6 edifícios com níveis, mina em tempo real, maquete voxel ✅.
 5. **PvP assíncrono e guildas** — identidade da guilda (nome e estandarte) ✅, defesas partilháveis por código ✅, liga semanal com Elo e recompensas ✅, guerra de guilda ✅, replays ✅, combate automático ✅. Guildas reais online com defesas publicadas, ataques registados e guerra semanal entre guildas reais ✅ (armazenamento partilhado da página no claude.ai).
 6. **Onboarding (do primeiro feedback real)** — desbloqueio progressivo dos modos ✅, Recruta mais fácil ✅, botão Sugestão ✅, análise "Porque perdi?" ✅. Por validar: sessões de jogo do utilizador e de mais testadores (o que confunde, o que frustra, se pedem outra partida).

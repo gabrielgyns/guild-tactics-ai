@@ -1,6 +1,6 @@
 # Guild Tactics
 
-Jogo tático por turnos em voxel: 4 heróis contra 4, num tabuleiro 6×6 com terreno. Vertical slice jogável no browser.
+Jogo tático por turnos em voxel: 4 heróis contra 4 (16 heróis em 5 elementos), num tabuleiro 8×8 com terreno. Vertical slice jogável no browser.
 
 ## Jogar
 
